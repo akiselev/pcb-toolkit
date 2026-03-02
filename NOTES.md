@@ -24,39 +24,54 @@ See `docs/notes/ghidra-impedance.md` for decompiled impedance calculator code.
 ### Main Calculation Handlers
 | Handler | Address | Purpose |
 |---------|---------|---------|
+| Button1Click | 0x00403398 | **Main dispatcher** - reads DAT_008d5f88 and calls solver |
 | ComboBox1Change | 0x00494dd4 | Material Er/Tg selector (sets roughness factor 0.98 or 1.0) |
-| ComboBox1Change | 0x004f4900 | Material selector (2nd form) |
-| Button3Click | 0x004a7dc0 | Solve button (main calc form) |
-| Button3Click | 0x004f6ce0 | Solve button (2nd form) |
-| Button3Click | 0x00507fb0 | Solve button (3rd form) |
-| Button1Click | 0x00403398 | **Main dispatcher** - reads mode and calls solver |
-| Button2Click | 0x004715dc | Button2 handler |
-| RadioGroup2Click | 0x004b32c4 | Circuit type selector |
-| RadioGroup5Click | 0x004b3998 | Another radio group |
-| ConductorSpacing1Click | 0x004940CC | Conductor spacing tab handler |
 
-### Solver Functions (Dispatched by FUN_00403398 based on DAT_008d5f88)
-| Mode | Address | Calculator |
-|------|---------|-----------|
-| 0 | FUN_00440e34 | **Microstrip** (decompiled - see ghidra-impedance.md) |
-| 1 | FUN_0040bc00 | Stripline (too large to decompile) |
-| 2 | FUN_004343e4 | Differential Layer (too large) |
-| 3 | FUN_00422ddc | Edge Coupled External |
-| 4 | FUN_004435f8 | Edge Coupled Internal Symmetric |
-| 5 | FUN_004066b0 | Edge Coupled Internal Asymmetric |
-| 6 | FUN_00403f40 | Edge Coupled Embedded |
-| 7 | FUN_004b8104 | Broadside Coupled Shielded (decompiled) |
-| 8 | FUN_00482648 | Broadside Coupled Non-Shielded |
-| 9 | FUN_00498e84 | (Microstrip Embed?) |
-| 10 | FUN_004c41d8 | (Stripline Asymmetric?) |
-| 11 | FUN_0045fc54 | (Dual Stripline?) |
-| 12 | FUN_00408b68 | Coplanar Waveguide |
-| 13 | FUN_0040a0f4 | Unknown |
-| 14 | FUN_004bca88 | Unknown |
-| 15 | FUN_004081b0 | Unknown |
-| 16 | FUN_00427090 | Er Effective display (too large) |
-| 17 | FUN_004bf410 | **Wavelength Calculator** (decompiled) |
-| 18 | FUN_004d662c | Unknown |
+### Menu/Tab Click Handlers (set DAT_008d5f88 mode and call dispatcher)
+| Handler | Address | Sets Mode |
+|---------|---------|-----------|
+| SignalProperties1Click | 0x0049021c | 0 (Microstrip) |
+| RFImpedances1Click | 0x004a8bb8 | 1 (Stripline/RF) |
+| ConductorProperties1Click | 0x0048f1e4 | 2 (Conductor Current) |
+| DifferentialPairs1Click | 0x00490f44 | 4 (Differential Pairs) |
+| EmbeddedRs1Click | 0x004ba9d0 | 5 (Embedded Microstrip) |
+| ErEffective1Click | 0x004c25fc | 6 (Er Effective) |
+| FuseCurrent1Click | 0x004b7334 | 7 (Fusing Current) |
+| ConductorSpacing1Click | 0x004940cc | 9 (Conductor Spacing) |
+| OhmsLaw1Click | 0x004c3514 | 10 (Ohm's Law) |
+| Padstacks1Click | 0x00491a2c | 11 (Padstack) |
+| PlanarInductors1Click | 0x004b04d4 | 13 (Planar Inductor) |
+| PPMCalculator1Click | 0x004bbf34 | 14 (PPM Calculator) |
+| ViaProperties1Click | 0x0048e4c4 | 16 (Via Properties) |
+| WavelengthCalculator1Click | 0x004be8fc | 17 (Wavelength) |
+| XlXCReactance1Click | 0x004d59d0 | 18 (Reactance) |
+| CrosstalkCalculator1Click | 0x004bde04 | ? (possibly 15) |
+
+### Solver Functions (Dispatched by Button1Click_MainDispatcher based on DAT_008d5f88)
+
+**CORRECTED** - Mode mapping verified by tracing menu click handlers to DAT_008d5f88 assignments.
+
+| Mode | Address | Ghidra Name | Calculator | Verified By |
+|------|---------|-------------|-----------|-------------|
+| 0 | 0x00440e34 | Solver_Microstrip | **Microstrip Impedance** | SignalProperties1Click |
+| 1 | 0x0040bc00 | Solver_Stripline | **Stripline Impedance** | RFImpedances1Click |
+| 2 | 0x004343e4 | Solver_ConductorCurrent | **Conductor Current** (IPC-2152/2221A) | ConductorProperties1Click |
+| 3 | 0x00422ddc | Solver_EdgeCoupledExternal | Impedance sub-mode (TBD) | RadioGroup internal |
+| 4 | 0x004435f8 | Solver_DifferentialPairs | **Differential Pairs** | DifferentialPairs1Click |
+| 5 | 0x004066b0 | Solver_EmbeddedMicrostrip | **Embedded Microstrip** | EmbeddedRs1Click |
+| 6 | 0x00403f40 | Solver_ErEffective_REAL | **Er Effective** | ErEffective1Click |
+| 7 | 0x004b8104 | Solver_FusingCurrent | **Fusing Current** (Onderdonk) | FuseCurrent1Click |
+| 8 | 0x00482648 | Solver_BroadsideCoupledNonShielded | Impedance sub-mode (TBD) | RadioGroup internal |
+| 9 | 0x00498e84 | Solver_ConductorSpacing | **Conductor Spacing** (IPC-2221C) | ConductorSpacing1Click |
+| 10 | 0x004c41d8 | Solver_OhmsLaw | **Ohm's Law / E-I-R** | OhmsLaw1Click |
+| 11 | 0x0045fc54 | Solver_Padstack | **Padstack Calculator** | Padstacks1Click |
+| 12 | 0x00408b68 | Solver_CoplanarWaveguide | **Coplanar Waveguide** | (impedance sub-mode) |
+| 13 | 0x0040a0f4 | Solver_PlanarInductor | **Planar Inductor** | PlanarInductors1Click |
+| 14 | 0x004bca88 | Solver_PPMCalculator | **PPM / XTAL Calculator** | PPMCalculator1Click |
+| 15 | 0x004081b0 | Solver_Mode15 | **Crosstalk?** (TBD) | CrosstalkCalculator1Click? |
+| 16 | 0x00427090 | Solver_ViaProperties | **Via Properties** | ViaProperties1Click |
+| 17 | 0x004bf410 | Solver_Wavelength | **Wavelength Calculator** | WavelengthCalculator1Click |
+| 18 | 0x004d662c | Solver_Reactance | **Reactance (Xc/Xl)** | XlXCReactance1Click |
 
 ### Common Pre-computation Functions (called before every solver)
 - FUN_00471678

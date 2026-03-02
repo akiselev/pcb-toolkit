@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
 use pcb_toolkit::impedance::microstrip;
+use pcb_toolkit::units::{Freq, Length};
 
 use crate::output;
 
@@ -15,37 +16,37 @@ pub struct ImpedanceArgs {
 pub enum ImpedanceTopology {
     /// Microstrip (trace over ground plane).
     Microstrip {
-        /// Conductor width (mils).
+        /// Conductor width [mil, mm, in, um]. Default unit: mil.
         #[arg(short, long)]
-        width: f64,
+        width: Length,
 
-        /// Dielectric height (mils).
+        /// Dielectric height [mil, mm, in, um]. Default unit: mil.
         #[arg(long)]
-        height: f64,
+        height: Length,
 
-        /// Conductor thickness (mils). Default: 1.4 (1oz copper).
-        #[arg(short, long, default_value = "1.4")]
-        thickness: f64,
+        /// Conductor thickness [mil, mm, in, um]. Default: 1.4mil (1oz copper).
+        #[arg(short, long, default_value = "1.4mil")]
+        thickness: Length,
 
         /// Substrate relative permittivity. Default: 4.6 (FR-4).
         #[arg(long, default_value = "4.6")]
         er: f64,
 
-        /// Frequency in MHz for dispersion correction. Default: 0 (static).
+        /// Frequency [Hz, kHz, MHz, GHz]. Default: 0 (static).
         #[arg(short, long, default_value = "0")]
-        freq_mhz: f64,
+        freq: Freq,
     },
 }
 
 pub fn run(args: &ImpedanceArgs, json: bool) -> Result<()> {
     match &args.topology {
-        ImpedanceTopology::Microstrip { width, height, thickness, er, freq_mhz } => {
+        ImpedanceTopology::Microstrip { width, height, thickness, er, freq } => {
             let result = microstrip::calculate(&microstrip::MicrostripInput {
-                width: *width,
-                height: *height,
-                thickness: *thickness,
+                width: width.mils(),
+                height: height.mils(),
+                thickness: thickness.mils(),
                 er: *er,
-                frequency: freq_mhz * 1e6,
+                frequency: freq.hz(),
             })
             .context("microstrip calculation failed")?;
 

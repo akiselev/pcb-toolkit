@@ -23,3 +23,4 @@ pub mod wavelength;
 pub mod tables;
 
 pub use error::CalcError;
+pub use units::{Capacitance, Freq, Inductance, Length, Temperature, UnitParseError};
