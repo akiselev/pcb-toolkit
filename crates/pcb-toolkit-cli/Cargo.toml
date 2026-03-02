@@ -2,8 +2,17 @@
 name = "pcb-toolkit-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-description = "Command-line PCB design calculator"
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+description = "Command-line PCB design calculator — impedance, current capacity, via properties, and more"
+documentation = "https://docs.rs/pcb-toolkit-cli"
+readme = "README.md"
+keywords = ["pcb", "eda", "impedance", "electronics", "calculator"]
+categories = ["command-line-utilities", "science"]
 
 [[bin]]
 name = "pcb-toolkit"

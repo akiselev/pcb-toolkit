@@ -5,7 +5,11 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/akiselev/pcb-toolkit"
+homepage = "https://github.com/akiselev/pcb-toolkit"
+authors = ["Alexander Kiselev <alex@akiselev.com>"]
 
 [workspace.dependencies]
 pcb-toolkit = { path = "crates/pcb-toolkit" }
