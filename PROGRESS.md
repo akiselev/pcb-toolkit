@@ -1,6 +1,6 @@
 # Reverse Engineering Progress
 
-## Status: Partially Complete (~60%)
+## Status: Partially Complete (~75%)
 
 ### What's Done
 
@@ -41,6 +41,12 @@
 
 10. **Global variables map**: ~30 data addresses mapped to their purposes
 
+11. **Four additional calculator modules implemented**:
+    - `impedance::stripline` — Cohn/Wadell centered stripline formula
+    - `impedance::embedded` — Embedded microstrip with burial correction (Brooks)
+    - `current` — IPC-2221A current capacity, DC resistance, skin depth
+    - `crosstalk` — Backward crosstalk (NEXT) estimation (standard Kb formula)
+
 ### What's NOT Done
 
 1. **Remaining solver decompilation**: 16 of 19 solver modes not yet decompiled:
@@ -57,9 +63,11 @@
 
 5. **IPC-2152 conductor current charts**: Coefficient data not extracted.
 
-6. **Conductor current / via calculators**: Not decompiled (background agents failed due to bridge lock).
+6. **Conductor current IPC-2152 mode**: IPC-2221A implemented but IPC-2152 table data still needed for full accuracy. Saturn PDF vectors (page 6/46) use IPC-2152 mode.
 
-7. **Differential pair / crosstalk / inductor calculators**: Not decompiled.
+7. **Differential pair calculator**: Not decompiled (FUN_004343e4 too large).
+
+8. **Crosstalk Saturn match**: Standard Kb formula implemented but doesn't match Saturn's test vector (-2.23 dB / 3.87 V). Saturn likely uses a different formula.
 
 ### Ghidra Issues Encountered
 

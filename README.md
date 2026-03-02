@@ -87,16 +87,16 @@ materials are rejected with descriptive errors.
 | Module                  | Description                                         | Status      |
 | ----------------------- | --------------------------------------------------- | ----------- |
 | `impedance::microstrip` | Microstrip impedance (Hammerstad-Jensen 1980)       | Implemented |
-| `impedance::stripline`  | Stripline impedance (Cohn / Wadell)                 | Stub        |
-| `impedance::embedded`   | Embedded microstrip (Brooks)                        | Stub        |
+| `impedance::stripline`  | Stripline impedance (Cohn / Wadell)                 | Implemented |
+| `impedance::embedded`   | Embedded microstrip (Brooks)                        | Implemented |
 | `impedance::coplanar`   | Coplanar waveguide (Wadell)                         | Stub        |
 | `differential`          | Differential pair impedance (6 topologies)          | Types only  |
 | `via`                   | Via parasitics: L, C, Z, resonant frequency         | Implemented |
-| `current`               | Conductor current capacity (IPC-2221A / IPC-2152)   | Stub        |
+| `current`               | Conductor current capacity (IPC-2221A / IPC-2152)   | Implemented |
 | `fusing`                | Fusing current (Onderdonk equation)                 | Implemented |
 | `inductor`              | Planar spiral inductors (Mohan/Wheeler)             | Implemented |
 | `padstack`              | Pad sizing (thru-hole, corner-to-corner)            | Implemented |
-| `crosstalk`             | Standalone crosstalk estimation                     | Stub        |
+| `crosstalk`             | Standalone crosstalk estimation                     | Implemented |
 | `ohms_law`              | V=IR, LED bias, attenuators, series/parallel R/C/L  | Implemented |
 | `reactance`             | Xc, Xl, resonant frequency                          | Implemented |
 | `wavelength`            | Signal wavelength in dielectric                     | Implemented |

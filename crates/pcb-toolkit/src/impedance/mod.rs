@@ -7,5 +7,7 @@
 //! Computer-Aided Design", IEEE MTT-S 1980.
 
 pub mod common;
+pub mod embedded;
 pub mod microstrip;
+pub mod stripline;
 pub mod types;
