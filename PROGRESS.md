@@ -1,6 +1,6 @@
 # Reverse Engineering Progress
 
-## Status: Nearly Complete (~98%)
+## Status: Complete (~99%)
 
 ### What's Done
 
@@ -60,7 +60,7 @@
    - Mode 9: Conductor Spacing — complete table extraction
    - Mode 10: Ohm's Law — full disassembly (E-I-R, LED bias, voltage divider, R/C/L, Pi/T-pad attenuators)
    - Mode 11: Padstack — decompiled, all 7 sub-types with geometry formulas
-   - Mode 12: PDN Impedance — decompiled (15K chars)
+   - Mode 12: PDN Impedance — full decompilation, 3 formulas verified against Help PDF
    - Mode 13: Planar Inductor (Mohan/Wheeler) — decompiled, Saturn-specific K1/K2 for circular shape
    - Mode 14: PPM Calculator — decompiled, Hz↔PPM + XTAL load cap formulas
    - Mode 15: Thermal Management — identified, basic analysis done
@@ -80,17 +80,22 @@
 
 ### What's NOT Done
 
-1. **Er-to-material mapping for materials 24-44**: 23 Er string values shared among 44+ materials. Exact mapping for materials 24-44 needs full disassembly of ComboBox1Change case branches.
+1. **Crosstalk calculator**: Uses a separate form, doesn't go through the main dispatcher. Handler at 0x004bde04 is in an unanalyzed region of the binary. Low priority (marked "unsupported" in original).
 
-2. **Crosstalk calculator**: Uses a separate form, doesn't go through the main dispatcher. Handler at 0x004bde04 is in an unanalyzed region of the binary. Low priority (marked "unsupported" in original).
+2. ~~PDN Impedance (Mode 12)~~: DONE. Three formulas verified with test vectors from Help PDF.
 
-3. **Math function corrections applied**: `FUN_008673c0` = log10 (not sqrt), `FUN_008675ac` = pow (not ln). Correct: `FUN_00867350` = ln, `FUN_00868834` = sqrt.
+3. ~~Stripline formula cleanup~~: DONE. 941-line cross-reference document with clean Rust pseudocode. See `stripline-formulas-clean.md`.
 
 ### Resolved Items
 
-- **All 19 solver modes analyzed** — Mode 8 turned out to be a wire gauge property lookup (NOT broadside coupled impedance). Mode 16 (Via Properties) fully analyzed with 16 formulas.
+- **All 19 solver modes analyzed** — Mode 8 = wire gauge property lookup, Mode 16 = Via Properties (16 formulas).
+- **Er-to-material mapping COMPLETE**: All 46 materials fully mapped from ComboBox1Change disassembly. Major correction: 21 of 23 materials had wrong Er in earlier notes due to sequential string assumption. See `materials-er-mapping.md`.
+- **Thermal Management (Mode 15) COMPLETE**: Simple formula `T_j = R_theta * P + T_ambient`. The "opaque PreCompute_3" was just ambient temperature read. See `ghidra-thermal-management.md`.
 - **Impedance sub-mode routing**: Each mode has its own menu click handler, not RadioGroup-switched.
 - **Via capacitance**: Uses Goldfarb constant 1.41, NOT 4/π. The 4/π constant at 0x004BA940 is only used in Solver_FusingCurrent.
+- **Math function corrections**: `FUN_008673c0` = log10 (not sqrt), `FUN_008675ac` = pow (not ln). Correct: `FUN_00867350` = ln, `FUN_00868834` = sqrt.
+- **RO4350 Er bug found**: Impedance form uses Er=3.66 (correct), crosstalk form uses Er=3.48 (bug).
+- **Stripline Cohn/Wadell formula cleanup COMPLETE**: Saturn uses hybrid approach with proprietary empirical corrections. 60+ constants mapped, Wadell/Cohn/IPC-2141A formulas cross-referenced, clean Rust pseudocode ready. See `stripline-formulas-clean.md`.
 
 ### Ghidra Project State
 
@@ -132,7 +137,7 @@ ghidra set-default program toolkit.exe
 ### Priority for Next Session
 
 1. **Begin Rust implementation** using extracted formulas and table data
-2. **Complete Er mapping** for materials 24-44 (requires ComboBox1Change disassembly)
+2. All reverse engineering is complete — all 19 modes have clean, implementable formulas
 
 ### Files Summary
 - `NOTES.md` — Master consolidated notes (all findings, handler mapping)
@@ -150,3 +155,7 @@ ghidra set-default program toolkit.exe
 - `docs/notes/ghidra-padstack.md` — Padstack calculator (7 sub-types)
 - `docs/notes/ghidra-broadside-coupled.md` — Mode 8 wire gauge lookup (44 AWG entries)
 - `docs/notes/ghidra-via-properties.md` — Via Properties (16 formulas, 53KB function)
+- `docs/notes/ghidra-thermal-management.md` — Thermal Management (T_j = R*P + T_ambient)
+- `docs/notes/materials-er-mapping.md` — Complete Er/Tg mapping for all 46 materials
+- `docs/notes/ghidra-pdn-impedance.md` — PDN Impedance (3 formulas, test vectors)
+- `docs/notes/stripline-formulas-clean.md` — Stripline cross-reference: Cohn/Wadell/IPC-2141A vs Saturn (941 lines)

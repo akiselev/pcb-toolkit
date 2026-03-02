@@ -7,97 +7,102 @@ processes 45 materials (indices 0-44) plus Air and Custom.
 
 ## Complete Material Database (46 items + Custom)
 
-### Materials 1-23 (Er values extracted as strings at binary offsets 0x4730e7 and 0x4b9ae8)
+**CORRECTED** from disassembly of ComboBox1Change at 0x00494dd4. Previous notes assumed
+sequential Er string assignment, which was wrong for 21 of 23 materials.
+Full disassembly details in `materials-er-mapping.md`.
 
 | #  | Material         | Er    | Tg (°C) | Roughness | Notes |
-|----|------------------|-------|---------|-----------|-------|
-| 1  | FR-4 STD         | 4.6   | 130     | 0.98      | Er hardcoded, Tg from string |
-| 2  | FR-5             | 4.3   | 170     | 0.98      | High-Tg FR-4 variant |
-| 3  | FR406            | 3.8   | 180     | 0.98      | Isola FR406 |
-| 4  | FR408            | 3.9   | -       | 0.98      | Isola FR408 |
-| 5  | Getek ML200C     | 4.2   | -       | 0.98      | |
-| 6  | Getek ML200D     | 3.78  | 260     | 0.98      | High-performance |
-| 7  | Getek ML200M     | 2.94  | -       | 0.98      | |
-| 8  | Getek RG200D     | 3.0   | -       | 0.98      | Er hardcoded as float |
-| 9  | Isola P95        | 6.15  | -       | 1.0       | |
-| 10 | Isola P96        | 10.2  | -       | 1.0       | |
-| 11 | Isola P26N       | 3.38  | 280     | 1.0       | |
-| 12 | RO2800           | 3.66  | -       | 1.0       | Rogers |
-| 13 | RO3003           | 2.5   | -       | 1.0       | Er hardcoded as float |
-| 14 | RO3006           | 2.35  | -       | 1.0       | Rogers |
-| 15 | RO3010           | 2.2   | -       | 1.0       | Rogers |
-| 16 | RO4003           | 2.1   | 240     | 1.0       | Rogers |
-| 17 | RO4350           | 4.25  | -       | 1.0       | Rogers |
-| 18 | RT5500           | 4.5   | 140     | 1.0       | Rogers |
-| 19 | RT5870           | 4.1   | 165     | 1.0       | Rogers |
-| 20 | RT5880           | 3.7   | 210     | 1.0       | Rogers |
-| 21 | RT6002           | 3.4   | -       | 1.0       | Rogers |
-| 22 | RT6006           | 4.15  | -       | 1.0       | Rogers |
-| 23 | RT6010           | 4.38  | -       | 1.0       | Rogers |
-
-### Materials 24-44 (Er values reuse same 23 string constants; exact mapping needs disassembly)
-
-| #  | Material         | Er    | Tg (°C) | Roughness | Notes |
-|----|------------------|-------|---------|-----------|-------|
-| 24 | Teflon PTFE      | ?     | -       | 1.0       | Likely Er≈2.1 |
-| 25 | Arlon 25N        | ?     | -       | 1.0       | |
-| 26 | Arlon 33N        | ?     | -       | 1.0       | |
-| 27 | Arlon 85N        | ?     | -       | 1.0       | |
-| 28 | PCL-FR-226       | ?     | -       | 0.98      | FR-4 variant |
-| 29 | PCL-FR-240       | ?     | -       | 0.98      | FR-4 variant |
-| 30 | PCL-FR-370       | ?     | -       | 0.98      | FR-4 variant |
-| 31 | PCL-FR-370HR     | ?     | -       | 0.98      | FR-4 variant |
-| 32 | N4000-7 EF       | ?     | -       | 0.98      | Nelco |
-| 33 | N4000-13         | ?     | -       | 0.98      | Nelco |
-| 34 | N4000-13SI       | ?     | -       | 0.98      | Nelco |
-| 35 | N4000-13 EP      | ?     | -       | 0.98      | Nelco |
-| 36 | N4000-13 EPSI    | ?     | -       | 0.98      | Nelco |
-| 37 | N4000-29         | ?     | -       | 0.98      | Nelco |
-| 38 | N7000-1          | ?     | -       | 1.0       | Nelco (low-loss) |
-| 39 | Ventec VT-47     | ?     | -       | 0.98      | |
-| 40 | Ventec VT-901    | ?     | -       | 1.0       | |
-| 41 | Ventec VT-90H    | ?     | -       | 1.0       | |
-| 42 | Megtron6         | ?     | -       | 1.0       | Panasonic (low-loss) |
-| 43 | Kappa 438        | ?     | -       | 1.0       | |
-| 44 | Kapton           | ?     | -       | 1.0       | Polyimide film |
-| 45 | Air              | 1.0   | N/A     | special   | Air=1.0, blocked for some calcs |
-| 46 | Custom           | user  | user    | user      | User-editable |
+|----|------------------|------:|--------:|----------:|-------|
+| 1  | FR-4 STD         |  4.60 |     130 |      0.98 | |
+| 2  | FR-5             |  4.30 |     170 |      0.98 | |
+| 3  | FR406            |  4.60 |     170 |      0.98 | Same Er as FR-4 STD |
+| 4  | FR408            |  3.80 |     180 |      0.98 | |
+| 5  | Getek ML200C     |  3.80 |     175 |      0.98 | Same Er as FR408 |
+| 6  | Getek ML200D     |  3.90 |     175 |      0.98 | |
+| 7  | Getek ML200M     |  3.80 |     175 |      0.98 | Same Er as FR408 |
+| 8  | Getek RG200D     |  4.20 |     175 |      0.98 | |
+| 9  | Isola P95        |  3.78 |     260 |      1.00 | |
+| 10 | Isola P96        |  3.78 |     260 |      1.00 | Same Er/Tg as P95 |
+| 11 | Isola P26N       |  3.90 |     250 |      1.00 | Same Er as Getek ML200D |
+| 12 | RO2800           |  2.94 |     N/A |      1.00 | Rogers |
+| 13 | RO3003           |  3.00 |     N/A |      1.00 | Rogers |
+| 14 | RO3006           |  6.15 |     N/A |      1.00 | Rogers |
+| 15 | RO3010           | 10.20 |     N/A |      1.00 | Rogers |
+| 16 | RO4003           |  3.38 |     280 |      1.00 | Rogers |
+| 17 | RO4350           |  3.66 |     280 |      1.00 | Rogers; crosstalk form uses 3.48 (bug) |
+| 18 | RT5500           |  2.50 |     260 |      1.00 | Rogers |
+| 19 | RT5870           |  2.35 |     260 |      1.00 | Rogers |
+| 20 | RT5880           |  2.20 |     260 |      1.00 | Rogers |
+| 21 | RT6002           |  2.94 |     N/A |      1.00 | Rogers; same Er as RO2800 |
+| 22 | RT6006           |  6.15 |     N/A |      1.00 | Rogers; same Er as RO3006 |
+| 23 | RT6010           | 10.20 |     N/A |      1.00 | Rogers; same Er as RO3010 |
+| 24 | Teflon PTFE      |  2.10 |     240 |      1.00 | |
+| 25 | Arlon 25N        |  3.38 |     260 |      1.00 | Same Er as RO4003 |
+| 26 | Arlon 33N        |  4.25 |     250 |      1.00 | |
+| 27 | Arlon 85N        |  4.20 |     250 |      1.00 | Same Er as Getek RG200D |
+| 28 | PCL-FR-226       |  4.50 |     140 |      0.98 | |
+| 29 | PCL-FR-240       |  4.50 |     140 |      0.98 | Same Er/Tg as PCL-FR-226 |
+| 30 | PCL-FR-370       |  4.50 |     175 |      0.98 | Same Er as PCL-FR-226 |
+| 31 | PCL-FR-370HR     |  4.60 |     180 |      0.98 | Same Er as FR-4 STD |
+| 32 | N4000-7 EF       |  4.10 |     165 |      0.98 | Nelco |
+| 33 | N4000-13         |  3.70 |     210 |      0.98 | Nelco |
+| 34 | N4000-13SI       |  3.40 |     210 |      0.98 | Nelco |
+| 35 | N4000-13 EP      |  3.70 |     210 |      0.98 | Nelco; same Er as N4000-13 |
+| 36 | N4000-13 EPSI    |  3.40 |     210 |      0.98 | Nelco; same Er as N4000-13SI |
+| 37 | N4000-29         |  4.50 |     185 |      0.98 | Nelco; same Er as PCL-FR-226 |
+| 38 | N7000-1          |  3.90 |     260 |      1.00 | Nelco; same Er as Getek ML200D |
+| 39 | Ventec VT-47     |  4.60 |     180 |      0.98 | Same Er as FR-4 STD |
+| 40 | Ventec VT-901    |  4.15 |     250 |      1.00 | |
+| 41 | Ventec VT-90H    |  4.15 |     250 |      1.00 | Same Er/Tg as VT-901 |
+| 42 | Megtron6         |  3.40 |     185 |      1.00 | Panasonic; same Er as N4000-13SI |
+| 43 | Kappa 438        |  4.38 |     280 |      1.00 | |
+| 44 | Kapton           |  3.40 |     400 |      1.00 | Polyimide; same Er as N4000-13SI |
+| 45 | Air              |  1.00 |     N/A |      1.00 | Blocked for crosstalk (mode 6) |
+| 46 | Custom           |  user |    user |      user | User-editable |
 
 ### Roughness Factor (from decompiled ComboBox1Change at 0x00494dd4)
 
 Stored as double at `DAT_008d6478/008d647c`, applied as multiplier to impedance.
 
-- **0.98** = FR-4 type materials with copper surface roughness penalty
-  - Materials 1-8 (FR-4 STD through Getek RG200D)
-  - Materials 28-37 (PCL-FR series, N4000 series)
-  - Material 39 (Ventec VT-47)
-- **1.0** = Ideal/smooth materials (Rogers, Teflon, specialty)
-  - Materials 9-27 (Isola P95 through Arlon 85N)
-  - Material 38 (N7000-1)
-  - Materials 40-44 (Ventec VT-901/90H, Megtron6, Kappa 438, Kapton)
-  - Material 45 (Air)
+- **0.98** (`0x3fef5c28f5c28f5c`): FR-4 type materials with copper surface roughness penalty
+  - Indices 0-7 (FR-4 STD through Getek RG200D)
+  - Indices 27-36 (PCL-FR series, N4000 series, N4000-29)
+  - Index 38 (Ventec VT-47)
+- **1.0** (`0x3ff0000000000000`): Smooth/ideal materials (PTFE, Rogers, specialty)
+  - Indices 8-26 (Isola, Rogers, Teflon PTFE, Arlon)
+  - Index 37 (N7000-1)
+  - Indices 39-44 (Ventec VT-901/90H, Megtron6, Kappa 438, Kapton, Air)
 
-### Tg Values (9 values extracted from binary string area 0x4730e7)
+### Tg Values (13 unique values, FULLY MAPPED from disassembly)
 
-Values appear as null-terminated strings interleaved with Er values:
-130, 170, 180, 260, 280, 240, 140, 165, 210
-
-Mapping confirmed for materials 1-3 (FR-4: 130°C, FR-5: 170°C, FR406: 180°C).
-Remaining Tg-to-material mapping tentative (needs disassembly verification).
+| Tg (°C) | Materials |
+|---------|-----------|
+| 130 | FR-4 STD |
+| 140 | PCL-FR-226, PCL-FR-240 |
+| 165 | N4000-7 EF |
+| 170 | FR-5, FR406 |
+| 175 | Getek ML200C/D/M, Getek RG200D, PCL-FR-370 |
+| 180 | FR408, PCL-FR-370HR, Ventec VT-47 |
+| 185 | N4000-29, Megtron6 |
+| 210 | N4000-13, N4000-13SI, N4000-13 EP, N4000-13 EPSI |
+| 240 | Teflon PTFE |
+| 250 | Isola P26N, Arlon 33N, Arlon 85N, Ventec VT-901, Ventec VT-90H |
+| 260 | Isola P95, Isola P96, RT5500, RT5870, RT5880, Arlon 25N, N7000-1 |
+| 280 | RO4003, RO4350, Kappa 438 |
+| 400 | Kapton |
+| N/A | RO2800, RO3003, RO3006, RO3010, RT6002, RT6006, RT6010, Air |
 
 ### Er String Storage
 
-- **23 unique Er string values** at two locations:
-  - `0x4730e7` - used by impedance calculator form
-  - `0x4b9ae8` - used by crosstalk form (identical values)
-- **3 hardcoded Er values** (4.6, 3.0, 2.5) - as float constants in code
-- Materials 24-44 reuse the same 23 Er string values (some materials share Er)
-- European locale duplicates (comma-decimal) follow each set
+- **23 unique Er values** used across all 44 non-Air materials
+- Two copies in binary: dot-decimal (impedance form) and comma-decimal (crosstalk form)
+- Materials share Er strings non-sequentially (e.g., FR406 reuses FR-4 STD's string)
+- **Bug**: RO4350 has Er=3.66 in impedance form but Er=3.48 in crosstalk form
 
-### Er Values (dot-decimal string sequence at 0x4b9ae8)
+### 23 Unique Er Values (sorted)
 ```
-4.6, 4.3, 3.8, 3.9, 4.2, 3.78, 2.94, 3.0, 6.15, 10.2, 3.38, 3.66,
-2.5, 2.35, 2.2, 2.1, 4.25, 4.5, 4.1, 3.7, 3.4, 4.15, 4.38
+2.1, 2.2, 2.35, 2.5, 2.94, 3.0, 3.38, 3.4, 3.66, 3.7, 3.78, 3.8,
+3.9, 4.1, 4.15, 4.2, 4.25, 4.3, 4.38, 4.5, 4.6, 6.15, 10.2
 ```
 
 ---
@@ -144,7 +149,7 @@ Remaining Tg-to-material mapping tentative (needs disassembly verification).
 |----------|-------|---------------|-------|
 | Speed of light | 299,792,458 m/s | 0x004435AC, 0x004BFF64 | Wavelength, propagation delay |
 | Speed of light | 11.803 in/ns | derived | Alternative unit |
-| 4/π | 1.2732 | 0x004BA940 | Via capacitance geometry |
+| 4/π | 1.2732 | 0x004BA940 | Fusing current (Solver_FusingCurrent only, NOT via) |
 | In-to-cm | 2.54 | 0x004435BC, 0x004BFF74 | Unit conversion |
 | Mil-to-m | 2.54e-5 | 0x004435DC | Unit conversion |
 | H-J constant a | 0.457 | 0x004435C4 | Kirschning-Jansen dispersion |

@@ -139,14 +139,19 @@ Complete ordered dropdown list extracted from binary at offset 0x7b4684:
 | 45 | Air | 1.0 | N/A |
 | 46 | Custom | user | user |
 
-### Er Values Extracted (23 values at binary offset 0x4b9ae8)
-Raw string sequence (dot-decimal, then comma-decimal duplicate for European locale):
-```
-4.6, 4.3, 3.8, 3.9, 4.2, 3.78, 2.94, 3.0, 6.15, 10.2, 3.38, 3.66,
-2.5, 2.35, 2.2, 2.1, 4.25, 4.5, 4.1, 3.7, 3.4, 4.15, 4.38
-```
+### Er Values — FULLY MAPPED from ComboBox1Change disassembly
 
-**NOTE**: 23 Er values for 44 materials (46 minus Air and Custom). The mapping is done via switch/case in `ComboBox1Change` at `0x00494dd4` - some materials share Er values, or the mapping isn't 1:1. The table above shows a TENTATIVE direct 1-to-1 mapping for the first 23 materials; the remaining 21 materials' Er values are set by later case branches that haven't been decompiled.
+23 unique Er values shared non-sequentially across 44 materials. Full mapping in
+`docs/notes/materials-er-mapping.md`. Key corrections from earlier (sequential) assumption:
+- FR406 = 4.6 (NOT 3.8), Isola P95/P96 = 3.78 (NOT 6.15/10.2)
+- RO3006 = 6.15, RO3010 = 10.2, RO4003 = 3.38, RO4350 = 3.66
+- Bug: RO4350 has Er=3.66 (impedance form) vs 3.48 (crosstalk form)
+
+Sorted unique values:
+```
+2.1, 2.2, 2.35, 2.5, 2.94, 3.0, 3.38, 3.4, 3.66, 3.7, 3.78, 3.8,
+3.9, 4.1, 4.15, 4.2, 4.25, 4.3, 4.38, 4.5, 4.6, 6.15, 10.2
+```
 
 ### Material Roughness Correction (from ComboBox1Change decompilation)
 - **0.98** for standard FR-4 variants (surface roughness penalty)
@@ -364,6 +369,36 @@ Saturn K1/K2: Square=2.34/2.75, Hex=2.33/3.82, Oct=2.25/3.55, Circle=2.275/3.575
 Published K1/K2 for Circle: 2.23/3.45 (Saturn differs!)
 ```
 
+### Stripline Impedance (Mode 1)
+
+Saturn uses a **hybrid** approach combining Cohn/Wadell/IPC-2141A with proprietary
+empirical correction coefficients. Full analysis in `docs/notes/stripline-formulas-clean.md`.
+
+**Core formula approaches identified:**
+- **Wadell finite-thickness**: `Z0 = (30/√Er) * ln(1 + A*(2A + √(4A² + 6.27)))` where `A = 4(B-T)/(πW_eff)`
+- **IPC-2141A simplified**: `Z0 = (60/√Er) * ln(4B / (0.67π(0.8W + T)))`
+- **Cohn zero-thickness**: `Z0 = (η₀/(4√Er)) * K(k')/K(k)` where `k = sech(πW/(2B))`
+- **Cohn/Steer with fringing Cf**: `Z0 = (30π/√Er) * (1-t/b)/(w_eff/b + Cf)`
+
+**Key discrepancies from published formulas:**
+- Fringe factor: Saturn uses 0.432, published is 2*ln(2)/π = 0.4413 (~2% diff)
+- Er correction: Saturn uses `ln((Er-0.9)/(Er+3))*0.564`, H-J uses `0.564*((Er-0.9)/(Er+3))^0.053`
+- Proprietary polynomial coefficients: 0.525, 0.6315, 0.27488, -8.7513, 0.065683, etc.
+- Coupled stripline uses Cohn conformal mapping (tanh/coth) with corrections: 1.023, 1.0235, 0.5008, 1.1564, 0.4749
+
+**Coupled/Differential Stripline** (Cohn 1955):
+```
+ke = tanh(πW/(2B)) * tanh(π(W+S)/(2B))    # even mode modulus
+ko = tanh(πW/(2B)) * coth(π(W+S)/(2B))    # odd mode modulus (note: /tanh → coth)
+Z0e = (η₀/(4√Er)) * K(k'_e)/K(k_e)
+Z0o = (η₀/(4√Er)) * K(k'_o)/K(k_o)
+Zdiff = 2*Z0o, Zcomm = Z0e/2
+```
+
+**Propagation delay**: `Tpd = √Er_eff * 1000/11.8` ps/inch (11.8 = c in in/ns)
+
+**60+ binary constants mapped** at 0x00422bd8–0x00422dd4 (see stripline-formulas-clean.md §8).
+
 ### Wire Gauge Properties (Mode 8, UI: "Broad Cpld NShld")
 ```
 area_result = diameter_mils^2 / 700.0
@@ -371,6 +406,22 @@ result = (val_A * wire_resistance) / 1000.0 * val_B
 ```
 44 AWG entries (4/0 through 40) with diameter and DC resistance lookup tables.
 NOT an impedance formula despite the UI label.
+
+### PDN Impedance (Mode 12)
+```
+Z_target = (V_supply * V_ripple_pct/100) / (I_max * I_step_pct/100)
+C_plane  = 0.225 * Er * A_sqin / (d_mils / 1000)     [pF, imperial]
+C_plane  = 0.008858 * Er * A_mm2 / d_mm               [pF, metric]
+Xc       = 1 / (2*pi * f_Hz * C_F)                    [Ohms, skipped if DC]
+```
+Constant 0.225 at 0x0040a0c8 is epsilon_0 in pF for sq.in/inch units.
+
+### Thermal Management (Mode 15)
+```
+T_junction = R_theta_ja * P_dissipated + T_ambient
+```
+Two independent channels (A and B), each computing junction temp from thermal resistance
+(C/W) and power dissipation (W). Sub-mode controls formatting only.
 
 ### Reactance
 ```
