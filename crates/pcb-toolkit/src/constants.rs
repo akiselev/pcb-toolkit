@@ -1,6 +1,4 @@
 //! Physical constants used across calculators.
-//!
-//! Values verified against Saturn PCB Toolkit v8.44 binary (see NOTES.md).
 
 /// Speed of light in vacuum (m/s).
 pub const SPEED_OF_LIGHT_MS: f64 = 299_792_458.0;

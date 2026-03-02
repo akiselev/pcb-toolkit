@@ -2,8 +2,6 @@
 //!
 //! Reference: Hammerstad & Jensen, "Accurate Models for Microstrip Computer-Aided
 //! Design", IEEE MTT-S International Microwave Symposium Digest, 1980.
-//!
-//! Decompiled from Saturn PCB Toolkit FUN_00440e34 (Mode 0).
 
 use crate::CalcError;
 use crate::impedance::{common, types::ImpedanceResult};

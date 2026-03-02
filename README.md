@@ -84,24 +84,24 @@ materials are rejected with descriptive errors.
 
 ## Calculator Modules
 
-| Module                  | Description                                         | Status        |
-| ----------------------- | --------------------------------------------------- | ------------- |
-| `impedance::microstrip` | Microstrip impedance (Hammerstad-Jensen 1980)       | Implemented   |
-| `impedance::stripline`  | Stripline impedance (Cohn / Wadell)                 | Planned       |
-| `impedance::embedded`   | Embedded microstrip (Brooks)                        | Planned       |
-| `impedance::coplanar`   | Coplanar waveguide (Wadell)                         | Planned       |
-| `differential`          | Differential pair impedance (6 topologies)          | Types defined |
-| `via`                   | Via parasitics: L, C, Z, resonance, DC R, thermal R | Planned       |
-| `current`               | Conductor current capacity (IPC-2221A / IPC-2152)   | Planned       |
-| `fusing`                | Fusing current (Onderdonk equation)                 | Planned       |
-| `inductor`              | Planar spiral inductors (Mohan/Wheeler)             | Planned       |
-| `padstack`              | Pad sizing (TH, BGA, routing — 7 sub-calculators)   | Planned       |
-| `crosstalk`             | Standalone crosstalk estimation                     | Planned       |
-| `ohms_law`              | V=IR, LED bias, attenuators, series/parallel        | Planned       |
-| `reactance`             | Xc, Xl, resonant frequency                          | Planned       |
-| `wavelength`            | Signal wavelength in dielectric                     | Planned       |
-| `ppm`                   | PPM/Hz conversion, crystal load capacitor           | Planned       |
-| `spacing`               | IPC-2221C minimum conductor spacing                 | Planned       |
+| Module                  | Description                                         | Status      |
+| ----------------------- | --------------------------------------------------- | ----------- |
+| `impedance::microstrip` | Microstrip impedance (Hammerstad-Jensen 1980)       | Implemented |
+| `impedance::stripline`  | Stripline impedance (Cohn / Wadell)                 | Stub        |
+| `impedance::embedded`   | Embedded microstrip (Brooks)                        | Stub        |
+| `impedance::coplanar`   | Coplanar waveguide (Wadell)                         | Stub        |
+| `differential`          | Differential pair impedance (6 topologies)          | Types only  |
+| `via`                   | Via parasitics: L, C, Z, resonant frequency         | Implemented |
+| `current`               | Conductor current capacity (IPC-2221A / IPC-2152)   | Stub        |
+| `fusing`                | Fusing current (Onderdonk equation)                 | Implemented |
+| `inductor`              | Planar spiral inductors (Mohan/Wheeler)             | Implemented |
+| `padstack`              | Pad sizing (thru-hole, corner-to-corner)            | Implemented |
+| `crosstalk`             | Standalone crosstalk estimation                     | Stub        |
+| `ohms_law`              | V=IR, LED bias, attenuators, series/parallel R/C/L  | Implemented |
+| `reactance`             | Xc, Xl, resonant frequency                          | Implemented |
+| `wavelength`            | Signal wavelength in dielectric                     | Implemented |
+| `ppm`                   | PPM/Hz conversion, crystal load capacitor           | Implemented |
+| `spacing`               | IPC-2221C minimum conductor spacing                 | Stub        |
 
 ## Materials Database
 

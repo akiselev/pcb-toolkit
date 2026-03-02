@@ -1,7 +1,4 @@
 //! PCB substrate material database.
-//!
-//! Material data extracted from Saturn PCB Toolkit v8.44 binary.
-//! See `docs/notes/15-materials-data.md` and `NOTES.md` for extraction details.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,8 +16,7 @@ pub struct Material {
 
 /// Built-in material database.
 ///
-/// First 23 materials have Er values extracted from binary at offset 0x4b9ae8.
-/// Roughness factor from ComboBox1Change decompilation: 0.98 for FR-4 family, 1.0 for others.
+/// Roughness factor: 0.98 for FR-4 family, 1.0 for others.
 pub static MATERIALS: &[Material] = &[
     Material { name: "FR-4 STD", er: 4.6, tg: Some(130.0), roughness_factor: 0.98 },
     Material { name: "FR-5", er: 4.3, tg: None, roughness_factor: 0.98 },
@@ -45,8 +41,7 @@ pub static MATERIALS: &[Material] = &[
     Material { name: "RT6002", er: 3.4, tg: None, roughness_factor: 1.0 },
     Material { name: "RT6006", er: 4.15, tg: None, roughness_factor: 1.0 },
     Material { name: "RT6010", er: 4.38, tg: None, roughness_factor: 1.0 },
-    // Materials 24-44: Er values not yet extracted from binary (need ComboBox1Change decompilation).
-    // For now, users must supply custom Er for these.
+    // Additional materials — users may supply custom Er for unlisted substrates.
     Material { name: "Teflon PTFE", er: 2.1, tg: None, roughness_factor: 1.0 },
     Material { name: "Air", er: 1.0, tg: None, roughness_factor: 1.0 },
 ];

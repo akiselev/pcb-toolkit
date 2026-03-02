@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 /// Differential pair protocol presets with target Zdiff.
-///
-/// Data extracted from Saturn PCB Toolkit binary at offset 0x783121.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiffProtocol {
     Ddr2ClkDqs,

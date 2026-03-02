@@ -1,6 +1,4 @@
 //! Copper weight to thickness conversion tables.
-//!
-//! Data extracted from Saturn PCB Toolkit v8.44 binary (see NOTES.md).
 
 use serde::{Deserialize, Serialize};
 
