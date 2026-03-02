@@ -1,0 +1,21 @@
+[package]
+name = "pcb-toolkit-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command-line PCB design calculator"
+
+[[bin]]
+name = "pcb-toolkit"
+path = "src/main.rs"
+
+[dependencies]
+pcb-toolkit = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+[lints]
+workspace = true
