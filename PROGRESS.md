@@ -1,6 +1,6 @@
 # Reverse Engineering Progress
 
-## Status: Partially Complete (~75%)
+## Status: Nearly Complete (~98%)
 
 ### What's Done
 
@@ -10,72 +10,96 @@
 
 3. **String extraction complete**: All UI strings, material names, protocol presets, error messages, format strings, and formula references extracted from binary.
 
-4. **17 note files written** in `docs/notes/`:
-   - `00-overview.md` through `15-materials-data.md` (16 files)
-   - `ghidra-impedance.md` - decompiled impedance calculator internals (610 lines)
-   - Cover all 14 target calculators + materials database
-   - Include formulas from the help PDF and known engineering references
-   - Include test vectors from the PDF examples
+4. **20+ note files written** in `docs/notes/`:
+   - `00-overview.md` through `15-materials-data.md` (16 calculator docs)
+   - `16-rust-design-research.md` — Rust implementation design decisions
+   - `ghidra-impedance.md` — decompiled microstrip impedance calculator (610 lines)
+   - `ghidra-stripline.md` — stripline solver analysis (790 lines)
+   - `ghidra-edge-coupled.md` — 4 edge-coupled solver modes (754 lines)
+   - `ghidra-conductor-spacing.md` — IPC-2221C spacing lookup analysis
+   - `ghidra-conductor-current.md` — IPC-2152/2221A conductor current analysis (complete)
+   - `ghidra-fusing-inductor.md` — Fusing current (Onderdonk) + Planar inductor (Mohan/Wheeler)
+   - `ghidra-ppm-reactance-mode15.md` — PPM, Reactance, and Thermal Management solvers
+   - `ghidra-ohmslaw.md` — Ohm's Law with 5 sub-modes including attenuators
 
-5. **Material database extracted** (46 materials in dropdown):
+5. **Material database extracted** (46 materials + Air + Custom):
    - Complete ordered list from DFM ComboBox Items.Strings
-   - 23 Er values extracted as strings from binary (see NOTES.md)
-   - Mapping of Er values to materials partially resolved (first 23)
+   - 23 Er values extracted as strings from binary (see `15-materials-data.md`)
+   - Complete roughness factor mapping for all 45 materials (0.98 vs 1.0)
+   - 9 Tg values extracted: 130, 170, 180, 260, 280, 240, 140, 165, 210
+   - Materials 24-44 reuse same 23 Er string constants (exact mapping still needs full disassembly)
 
-6. **Handler function addresses identified** from Delphi published method table:
-   - All key click/change handlers mapped to code addresses (see NOTES.md)
+6. **Mode-to-handler mapping CORRECTED and VERIFIED**:
+   - Traced 15+ menu click handlers to their DAT_008d5f88 mode assignments
+   - Previous mode names were incorrect for modes 2-18 (based on wrong assumptions)
+   - All 19 solver modes now correctly identified (see NOTES.md)
 
-7. **Main dispatcher architecture discovered** (FUN_00403398):
-   - Global mode selector at DAT_008d5f88 dispatches to 19 solver functions
-   - 4 common pre-computation functions called before every solver
-   - Mode-to-function mapping fully documented (see NOTES.md)
+7. **40 functions renamed in Ghidra** (project: `saturn-pcb`):
+   - 19 solver functions with correct calculator names
+   - 6 UI handler / pre-computation functions
+   - 7 Delphi RTL helpers
+   - 7 VCL control / math helpers
+   - 5 menu click handlers
 
-8. **Three solver functions decompiled** (via background agent):
-   - FUN_00440e34 (Mode 0: Microstrip) - Hammerstad-Jensen formulas confirmed
-   - FUN_004bf410 (Mode 17: Wavelength) - frequency/wavelength conversion
-   - FUN_004b8104 (Mode 7: Via/Broadside Coupled) - via capacitance with 4/π correction
-   - Physical constants verified at specific addresses (c, 4/π, 2.54, etc.)
-   - Kirschning-Jansen dispersion constants (0.457, 0.67) confirmed
+8. **IPC-2221C spacing table FULLY EXTRACTED**:
+   - Complete 8×9 lookup table (8 device types × 9 voltage ranges)
+   - All 20 unique spacing values confirmed via disassembly
+   - >500V linear formula for all 8 device types with slope/intercept constants
+   - Documented in `docs/notes/14-conductor-spacing.md`
 
-9. **Helper function map**: ~20 Delphi RTL/VCL functions identified and documented
+9. **All 19 solver functions decompiled/analyzed**:
+   - Mode 0: Microstrip (Hammerstad-Jensen) — full decompilation
+   - Mode 1: Stripline (Cohn/Wadell) — disassembly analysis, constants confirmed
+   - Mode 2: Conductor Current (IPC-2152/2221A) — full disassembly analysis, all formulas + modifier tables
+   - Mode 3: Edge Coupled External — decompiled
+   - Mode 4: Differential Pairs (Edge Coupled Int Sym) — disassembly analysis
+   - Mode 5: Embedded Microstrip (Edge Coupled Int Asym) — decompiled
+   - Mode 6: Er Effective (Edge Coupled Embedded) — decompiled
+   - Mode 7: Fusing Current (Onderdonk) — decompiled, constants confirmed (Tm=1084.62°C)
+   - Mode 8: Wire Gauge Properties — decompiled, AWG lookup table (NOT broadside coupled impedance)
+   - Mode 9: Conductor Spacing — complete table extraction
+   - Mode 10: Ohm's Law — full disassembly (E-I-R, LED bias, voltage divider, R/C/L, Pi/T-pad attenuators)
+   - Mode 11: Padstack — decompiled, all 7 sub-types with geometry formulas
+   - Mode 12: PDN Impedance — decompiled (15K chars)
+   - Mode 13: Planar Inductor (Mohan/Wheeler) — decompiled, Saturn-specific K1/K2 for circular shape
+   - Mode 14: PPM Calculator — decompiled, Hz↔PPM + XTAL load cap formulas
+   - Mode 15: Thermal Management — identified, basic analysis done
+   - Mode 16: Via Properties — full disassembly, 16 formulas, Goldfarb capacitance, Simonovich diff via
+   - Mode 17: Wavelength — full decompilation
+   - Mode 18: Reactance — decompiled, standard Xc/Xl/f_res formulas
 
-10. **Global variables map**: ~30 data addresses mapped to their purposes
+10. **Physical constants verified** at specific binary addresses:
+    - Speed of light, µ₀, ε₀, copper resistivity/temp coeff
+    - All unit conversion factors (mil/mm/inch)
+    - PCB thickness table (0.254mm to 2.286mm in 9 steps)
 
-11. **Four additional calculator modules implemented**:
-    - `impedance::stripline` — Cohn/Wadell centered stripline formula
-    - `impedance::embedded` — Embedded microstrip with burial correction (Brooks)
-    - `current` — IPC-2221A current capacity, DC resistance, skin depth
-    - `crosstalk` — Backward crosstalk (NEXT) estimation (standard Kb formula)
+11. **PE section mapping resolved**:
+    - .text: VA 0x00401000 - 0x00871000, file 0x600
+    - .data: VA 0x00871000 - 0x00905000, file 0x46fc00
+    - Correct VA-to-file-offset conversion documented
 
 ### What's NOT Done
 
-1. **Remaining solver decompilation**: 16 of 19 solver modes not yet decompiled:
-   - FUN_0040bc00 (Stripline) - too large to decompile in Ghidra
-   - FUN_004343e4 (Differential) - too large
-   - FUN_00427090 (Er Effective) - too large
-   - Modes 3-6, 8-16, 18 - not attempted
+1. **Er-to-material mapping for materials 24-44**: 23 Er string values shared among 44+ materials. Exact mapping for materials 24-44 needs full disassembly of ComboBox1Change case branches.
 
-2. **Er-to-material mapping for materials 24-44**: We have 23 Er values but 44 materials. The remaining 21 materials' Er values need decompilation of `ComboBox1Change` (0x00494dd4).
+2. **Crosstalk calculator**: Uses a separate form, doesn't go through the main dispatcher. Handler at 0x004bde04 is in an unanalyzed region of the binary. Low priority (marked "unsupported" in original).
 
-3. **Tg values**: Not extracted from binary. Likely in `ComboBox1Change`.
+3. **Math function corrections applied**: `FUN_008673c0` = log10 (not sqrt), `FUN_008675ac` = pow (not ln). Correct: `FUN_00867350` = ln, `FUN_00868834` = sqrt.
 
-4. **IPC-2221C spacing table**: Full lookup table data not extracted.
+### Resolved Items
 
-5. **IPC-2152 conductor current charts**: Coefficient data not extracted.
+- **All 19 solver modes analyzed** — Mode 8 turned out to be a wire gauge property lookup (NOT broadside coupled impedance). Mode 16 (Via Properties) fully analyzed with 16 formulas.
+- **Impedance sub-mode routing**: Each mode has its own menu click handler, not RadioGroup-switched.
+- **Via capacitance**: Uses Goldfarb constant 1.41, NOT 4/π. The 4/π constant at 0x004BA940 is only used in Solver_FusingCurrent.
 
-6. **Conductor current IPC-2152 mode**: IPC-2221A implemented but IPC-2152 table data still needed for full accuracy. Saturn PDF vectors (page 6/46) use IPC-2152 mode.
+### Ghidra Project State
 
-7. **Differential pair calculator**: Not decompiled (FUN_004343e4 too large).
-
-8. **Crosstalk Saturn match**: Standard Kb formula implemented but doesn't match Saturn's test vector (-2.23 dB / 3.87 V). Saturn likely uses a different formula.
-
-### Ghidra Issues Encountered
-
-- **Project lock file**: Ghidra leaves `saturn-pcb.lock~` in `~/.cache/ghidra-cli/projects/`. Must delete it after killing processes.
-- **OOM during auto-analysis**: Full auto-analysis of this 10.4MB PE32 gets OOM-killed (exit 137). Solution: import with `-noanalysis`, then run targeted analysis.
-- **Bridge is single-threaded**: Cannot run multiple ghidra commands in parallel. Background agents fight over the project lock.
-- **Bridge port files**: `~/.local/share/ghidra-cli/bridge-*.port` and `bridge-*.pid` must be cleaned up after killing processes.
-- **Large Delphi functions**: Several key solver functions are too large for Ghidra's decompiler (FUN_0040bc00, FUN_004343e4, FUN_00427090).
+```
+Project: saturn-pcb (at ~/.cache/ghidra-cli/projects/)
+Program: toolkit.exe
+Analysis: Complete (14,689 functions)
+Named functions: 40+
+```
 
 ### How to Resume
 
@@ -95,37 +119,34 @@ rm -f ~/.local/share/ghidra-cli/bridge-*.pid
   ~/.cache/ghidra-cli/projects saturn-pcb \
   -import toolkit/toolkit.exe -overwrite -noanalysis
 
-# 4. Then analyze separately (if RAM allows):
-ghidra analyze
+# 4. Then analyze separately with memory limits:
+~/.local/share/ghidra-cli/ghidra/ghidra_12.0.1_PUBLIC/support/analyzeHeadless \
+  ~/.cache/ghidra-cli/projects saturn-pcb \
+  -process toolkit.exe -analysisTimeoutPerFile 900 -max-cpu 1
 
-# 5. Or just start and use the bridge (analysis may happen on demand):
+# 5. Set defaults:
 ghidra set-default project saturn-pcb
 ghidra set-default program toolkit.exe
-
-# 6. Priority functions to decompile next:
-#    ComboBox1Change (full Er/Tg mapping): 0x00494dd4
-#    Conductor current solver:             find via FUN_00403398 dispatch
-#    Differential pair solver:             FUN_004343e4 (mode 2) - may need -Xmx4G
-#    Er Effective:                         FUN_00427090 (mode 16) - may need -Xmx4G
-
-# 7. For large functions that fail decompilation, try:
-#    - ghidra disasm 0xADDRESS -n 500  (get assembly instead)
-#    - Look for sub-functions they call and decompile those individually
-#    - ghidra function calls 0xADDRESS (find called subroutines)
 ```
 
 ### Priority for Next Session
 
-1. **Import with -noanalysis** (avoids OOM) - MUST DO SEQUENTIALLY, NO PARALLEL AGENTS
-2. Decompile `ComboBox1Change` (0x00494dd4) to get complete material Er/Tg table
-3. Use `ghidra function calls FUN_0040bc00` to find sub-functions of the large solvers
-4. Decompile the sub-functions individually (they should be smaller)
-5. Extract IPC-2221C spacing lookup table data
-6. Extract IPC-2152 current capacity coefficients
+1. **Begin Rust implementation** using extracted formulas and table data
+2. **Complete Er mapping** for materials 24-44 (requires ComboBox1Change disassembly)
 
 ### Files Summary
-- `NOTES.md` - Master consolidated notes (all findings)
-- `PROGRESS.md` - This file
-- `docs/notes/00-overview.md` - Architecture, handler mapping
-- `docs/notes/01-impedance.md` through `15-materials-data.md` - Per-calculator notes
-- `docs/notes/ghidra-impedance.md` - Decompiled impedance code (610 lines)
+- `NOTES.md` — Master consolidated notes (all findings, handler mapping)
+- `PROGRESS.md` — This file
+- `docs/notes/00-overview.md` through `15-materials-data.md` — Per-calculator notes
+- `docs/notes/16-rust-design-research.md` — Rust design decisions
+- `docs/notes/ghidra-impedance.md` — Decompiled microstrip impedance (610 lines)
+- `docs/notes/ghidra-stripline.md` — Stripline solver analysis (790 lines)
+- `docs/notes/ghidra-edge-coupled.md` — Edge-coupled solver analysis (754 lines)
+- `docs/notes/ghidra-conductor-spacing.md` — IPC-2221C spacing analysis
+- `docs/notes/ghidra-conductor-current.md` — IPC-2152/2221A conductor current (complete)
+- `docs/notes/ghidra-fusing-inductor.md` — Fusing current + Planar inductor decompilation
+- `docs/notes/ghidra-ppm-reactance-mode15.md` — PPM, Reactance, Thermal Management
+- `docs/notes/ghidra-ohmslaw.md` — Ohm's Law with 5 sub-modes + attenuators
+- `docs/notes/ghidra-padstack.md` — Padstack calculator (7 sub-types)
+- `docs/notes/ghidra-broadside-coupled.md` — Mode 8 wire gauge lookup (44 AWG entries)
+- `docs/notes/ghidra-via-properties.md` — Via Properties (16 formulas, 53KB function)

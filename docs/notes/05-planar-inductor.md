@@ -40,18 +40,29 @@ Where:
 - `μ₁ = μ₀ = 4π × 10⁻⁷ H/m` (permeability of free space)
 - `K1`, `K2` are geometry-dependent constants
 
-### Geometry Constants (from Mohan et al.)
-| Geometry | K1 | K2 |
-|----------|-----|-----|
-| Square | 2.34 | 2.75 |
-| Hexagonal | 2.33 | 3.82 |
-| Octagonal | 2.25 | 3.55 |
-| Circular | 2.23 | 3.45 |
+### Geometry Constants (Saturn binary values vs. published Mohan et al.)
+| Geometry | K1 (Saturn) | K2 (Saturn) | K1 (Mohan) | K2 (Mohan) |
+|----------|-------------|-------------|------------|------------|
+| Square | 2.34 | 2.75 | 2.34 | 2.75 |
+| Hexagonal | 2.33 | 3.82 | 2.33 | 3.82 |
+| Octagonal | 2.25 | 3.55 | 2.25 | 3.55 |
+| Circular | **2.275** | **3.575** | 2.23 | 3.45 |
+
+**Note**: Saturn uses non-standard circular constants. The values 2.275 and 3.575 are
+exact midpoints between octagonal and some hypothetical next shape. Use Saturn values
+to match output.
+
+## Binary Constants (from decompilation)
+| Address | Value | Purpose |
+|---------|-------|---------|
+| 0x0040bb08 | 25.4 (double) | Mil-to-mm conversion |
+| 0x0040bb20 | 0.001256 (double) | µ₀ scaling: truncated 4π×10⁻⁴ |
+| Stack locals | K1/K2 per shape | Selected by shape dropdown |
 
 ## Implementation Notes
-- Inner diameter is derived: `din = dout - 2*n*(w+s) + 2*s`
-  (outer diameter minus the space taken by n turns of width w with spacing s)
-- If din becomes negative or zero, the geometry is invalid
-- Units must be consistent - convert mils to meters for μ₀ calculation,
-  or use normalized version with appropriate constant
-- Output in nH
+- Inner diameter formula: `din = dout - 2*n*w - 2*(n-1)*s`
+- If din < 0, display error (geometry invalid)
+- Saturn uses truncated constant 0.001256 (not exact 4π×10⁻⁴ = 0.0012566)
+- Formula internally works in mm; output is µH
+- Mode 0 multiplies dimension inputs by 25.4 (inches or mils → mm)
+- Full decompilation details in `ghidra-fusing-inductor.md`

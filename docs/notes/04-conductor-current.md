@@ -65,10 +65,23 @@ Internal conductors:
 I = 0.024 * dT^0.44 * A^0.725
 ```
 
-### IPC-2152 Modifiers:
-- Board thickness correction factor
-- Plane proximity correction factor
-- Parallel conductor factor
+### IPC-2152 Modifiers (extracted from decompilation):
+```
+External: I = base * M_area * M_temp * M_board * M_material * M_user
+Internal: I = base * M_area * M_temp / plane_dist * M_board * M_material * M_user
+```
+
+**Area Chart Correction (M_area)** — piecewise power law:
+| Area Range (sq.mils) | Formula |
+|---|---|
+| area <= 20 | 3.0364 * area^(-0.145) |
+| 20 < area <= 60 | 2.9143 * area^(-0.129) |
+| 60 < area <= 100 | 2.7877 * area^(-0.114) |
+| area > 100 | 2.801 * area^(-0.111) |
+
+**Temperature Rise Correction (M_temp)** — 11-step lookup from 0.40 (dT≤10) to 1.30 (dT=100)
+
+**Board Thickness Correction (M_board)** — 2 tables (with/without copper plane), 11 steps each
 
 ## Skin Depth
 ```
@@ -110,3 +123,18 @@ None:    A = W * T                    (rectangular)
 | 5oz    | 7.00 | 175.0 |
 
 Total copper thickness = base weight thickness + plating thickness.
+
+## Etch Factor Formulas (from decompilation)
+```
+Mode 0 (1:1):  area = (width - thickness) * thickness
+Mode 1 (2:1):  area = (width - thickness/2) * thickness
+Mode 2 (none): area = width * thickness
+```
+
+## Binary Constants
+- k_ext = 0.048, k_int = 0.024, b = 0.44, c = 0.725
+- Copper temp coefficient: 0.00393 /°C (at 0x00440d54)
+- Copper resistivity: 1.72e-8 ohm·m (at 0x00440d68)
+- µ factor: 1.256636e-5 (4π×10⁻⁶, at 0x008d6418)
+
+Full decompilation details in `ghidra-conductor-current.md`

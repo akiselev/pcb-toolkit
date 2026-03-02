@@ -82,20 +82,29 @@ Calculated_Annular_Ring = (Max_Pad_Diameter - Hole_Diameter) / 2
 ### Output
 - **Maximum Conductor Width** = Distance - Land_Diameter - 2 × Spacing
 
-## 2 Conductors / Pad TH & BGA
-Same concept but fitting TWO conductors (differential pair) between pads.
+## 2 Conductors / Pad TH (verified from decompilation)
 ```
-Max_Conductor_Width = (Distance - Pad_Diameter - 2*Spacing - Gap) / 2
+Pad = Hole + 2*AR
+Fits if: Pad <= Distance - 2*Width - 3*Spacing
+```
+3 spacings: pad-conductor, conductor-conductor, conductor-pad
+
+## 2 Conductors / Pad BGA (verified from decompilation)
+```
+Max_Conductor_Width = (Distance - Land_Diameter - 3*Spacing) / 2
 ```
 
-## Corner to Corner
+## Corner to Corner (verified from decompilation)
+```
+diagonal = sqrt(a^2 + b^2)
+```
+Min/max drill suggestions use FPU rounding helper (banker's rounding).
 
-### Inputs
-- **Length of side a** - one side of square/rectangular pin
-- **Length of side b** - other side
+## Binary Constants (from decompilation)
+- BGA ball diameter thresholds (mils): 14, 22, 45, 65, 124
+- Non-plated pad offset: 50 mils (1.27mm)
+- Annular ring validation: 1-250 mils (0.0254-6.35mm)
+- Spoke widths: preset resource strings, not computed
+- BGA land sizes: IPC-7351A lookup, not computed
 
-### Outputs
-- **Distance Between Corners** = `sqrt(a² + b²)`
-  (string found: `c = sqrt(a^2+b^2)`)
-- **Suggested Min Drill** - based on pin diagonal
-- **Suggested Max Drill** - based on pin diagonal
+Full decompilation details in `ghidra-padstack.md`

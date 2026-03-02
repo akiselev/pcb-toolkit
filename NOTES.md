@@ -42,10 +42,15 @@ See `docs/notes/ghidra-impedance.md` for decompiled impedance calculator code.
 | Padstacks1Click | 0x00491a2c | 11 (Padstack) |
 | PlanarInductors1Click | 0x004b04d4 | 13 (Planar Inductor) |
 | PPMCalculator1Click | 0x004bbf34 | 14 (PPM Calculator) |
+| PDNImpedance1Click | 0x004b14d0 | 12 (PDN Impedance) |
+| ThermalManagement1Click | 0x004b1fe4 | 15 (Thermal Management) |
 | ViaProperties1Click | 0x0048e4c4 | 16 (Via Properties) |
 | WavelengthCalculator1Click | 0x004be8fc | 17 (Wavelength) |
 | XlXCReactance1Click | 0x004d59d0 | 18 (Reactance) |
-| CrosstalkCalculator1Click | 0x004bde04 | ? (possibly 15) |
+| CrosstalkCalculator1Click | 0x004bde04 | N/A (separate form) |
+| ConversionData1Click | 0x004afb40 | 3 (Edge Coupled External) |
+| Mechanical1Click | 0x00492768 | 8 (Broadside Coupled) |
+| CopperWeight1Click | 0x004b4e88 | N/A (separate form) |
 
 ### Solver Functions (Dispatched by Button1Click_MainDispatcher based on DAT_008d5f88)
 
@@ -56,19 +61,19 @@ See `docs/notes/ghidra-impedance.md` for decompiled impedance calculator code.
 | 0 | 0x00440e34 | Solver_Microstrip | **Microstrip Impedance** | SignalProperties1Click |
 | 1 | 0x0040bc00 | Solver_Stripline | **Stripline Impedance** | RFImpedances1Click |
 | 2 | 0x004343e4 | Solver_ConductorCurrent | **Conductor Current** (IPC-2152/2221A) | ConductorProperties1Click |
-| 3 | 0x00422ddc | Solver_EdgeCoupledExternal | Impedance sub-mode (TBD) | RadioGroup internal |
+| 3 | 0x00422ddc | Solver_EdgeCoupledExternal | **Edge Coupled External** | ConversionData1Click |
 | 4 | 0x004435f8 | Solver_DifferentialPairs | **Differential Pairs** | DifferentialPairs1Click |
 | 5 | 0x004066b0 | Solver_EmbeddedMicrostrip | **Embedded Microstrip** | EmbeddedRs1Click |
 | 6 | 0x00403f40 | Solver_ErEffective_REAL | **Er Effective** | ErEffective1Click |
 | 7 | 0x004b8104 | Solver_FusingCurrent | **Fusing Current** (Onderdonk) | FuseCurrent1Click |
-| 8 | 0x00482648 | Solver_BroadsideCoupledNonShielded | Impedance sub-mode (TBD) | RadioGroup internal |
+| 8 | 0x00482648 | Solver_BroadsideCoupledNonShielded | **Wire Gauge Properties** (UI: "Broad Cpld NShld") | Mechanical1Click |
 | 9 | 0x00498e84 | Solver_ConductorSpacing | **Conductor Spacing** (IPC-2221C) | ConductorSpacing1Click |
 | 10 | 0x004c41d8 | Solver_OhmsLaw | **Ohm's Law / E-I-R** | OhmsLaw1Click |
 | 11 | 0x0045fc54 | Solver_Padstack | **Padstack Calculator** | Padstacks1Click |
-| 12 | 0x00408b68 | Solver_CoplanarWaveguide | **Coplanar Waveguide** | (impedance sub-mode) |
+| 12 | 0x00408b68 | Solver_PDNImpedance_12 | **PDN Impedance** | PDNImpedance1Click |
 | 13 | 0x0040a0f4 | Solver_PlanarInductor | **Planar Inductor** | PlanarInductors1Click |
 | 14 | 0x004bca88 | Solver_PPMCalculator | **PPM / XTAL Calculator** | PPMCalculator1Click |
-| 15 | 0x004081b0 | Solver_Mode15 | **Crosstalk?** (TBD) | CrosstalkCalculator1Click? |
+| 15 | 0x004081b0 | Solver_ThermalManagement | **Thermal Management** | ThermalManagement1Click |
 | 16 | 0x00427090 | Solver_ViaProperties | **Via Properties** | ViaProperties1Click |
 | 17 | 0x004bf410 | Solver_Wavelength | **Wavelength Calculator** | WavelengthCalculator1Click |
 | 18 | 0x004d662c | Solver_Reactance | **Reactance (Xc/Xl)** | XlXCReactance1Click |
@@ -251,8 +256,10 @@ Stored as double at `DAT_008d6478/008d647c`, applied as multiplier to impedance.
 | FUN_00538980 | TControl.SetTop |
 | FUN_00538914 | TControl.SetWidth |
 | FUN_005dff68 | ShowMessage / error dialog |
-| FUN_008673c0 | sqrt() |
-| FUN_008675ac | ln() / log() |
+| FUN_00867350 | ln(x) — natural log via FLDLN2 + FYL2X |
+| FUN_008673c0 | log10(x) — common logarithm (NOT sqrt) |
+| FUN_008675ac | pow(x, y) — x^y via 2^(y*log2(x)) (NOT ln) |
+| FUN_00868834 | sqrt(x) — via FSQRT |
 | FUN_00861e48 | FloatToStr |
 | FUN_0071d964 | Format / FormatFloat |
 | FUN_00805c4c | TRegistry.Create |
@@ -299,23 +306,71 @@ Lmw = K1 * μ₀ * n² * d_avg / (1 + K2 * ρ)
 ρ = (d_out - d_in) / (d_out + d_in)    (fill factor)
 d_avg = (d_out + d_in) / 2
 
-K1/K2: Square=2.34/2.75, Hex=2.33/3.82, Oct=2.25/3.55, Circle=2.23/3.45
+K1/K2: Square=2.34/2.75, Hex=2.33/3.82, Oct=2.25/3.55, Circle=2.275/3.575
+Note: Saturn uses non-standard circular shape constants (published: 2.23/3.45)
 ```
 
 ### Fusing Current (Onderdonk)
 ```
 I = A * sqrt(log10(1 + (Tm-Ta)/(234+Ta)) / (33*t))
-Tm = 1064.62°C (copper melting point)
+Tm = 1084.62°C (copper melting point, NOT 1064.62 which is gold)
 A = cross-section in circular mils
 ```
 
-### Conductor Current (IPC-2221A Legacy)
+### Conductor Current (IPC-2221A Legacy / IPC-2152 Base)
 ```
 External: I = 0.048 * dT^0.44 * A^0.725
 Internal: I = 0.024 * dT^0.44 * A^0.725
 A = cross-section in sq.mils
 dT = temperature rise in °C
 ```
+
+IPC-2152 with modifiers:
+```
+External: I = base * M_area * M_temp * M_board * M_material * M_user
+Internal: I = base * M_area * M_temp / plane_dist * M_board * M_material * M_user
+```
+Where M_area is piecewise power law, M_temp/M_board are lookup tables.
+Full details in `docs/notes/ghidra-conductor-current.md`.
+
+### Ohm's Law (5 sub-modes)
+```
+E-I-R: V=IR, I=V/R, R=V/I, P=VI
+LED Bias: R = (Vsup - Vled) / (Iled_mA / 1000), W = (Vsup - Vled) * Iled_A
+Voltage Divider: Vout = Vin * R2 / (R1 + R2)
+Parallel R: R_total = 1 / (1/R1 + 1/R2 + ...)
+```
+
+### Pi-Pad Attenuator (unmatched)
+```
+K = 10^(dB/20)
+R1 = Zmax * (K²-1) / (K² - 2K*sqrt(Zmax/Zmin) + 1)
+R2 = Zmin * (K²-1) / (K² - 2K*sqrt(Zmin/Zmax) + 1)
+R3 = sqrt(Zmax*Zmin) * (K²-1) / (2K)
+```
+
+### T-Pad Attenuator (unmatched)
+```
+K = 10^(dB/20)
+R3 = 2K * sqrt(Zmax*Zmin) / (K²-1)
+R1 = Zmax * (K²+1)/(K²-1) - R3
+R2 = Zmin * (K²+1)/(K²-1) - R3
+```
+
+### Planar Inductor (Mohan/Wheeler Modified — Saturn-specific)
+```
+Lmw = K1 * µ₀ * n² * d_avg / (1 + K2 * ρ)
+Saturn K1/K2: Square=2.34/2.75, Hex=2.33/3.82, Oct=2.25/3.55, Circle=2.275/3.575
+Published K1/K2 for Circle: 2.23/3.45 (Saturn differs!)
+```
+
+### Wire Gauge Properties (Mode 8, UI: "Broad Cpld NShld")
+```
+area_result = diameter_mils^2 / 700.0
+result = (val_A * wire_resistance) / 1000.0 * val_B
+```
+44 AWG entries (4/0 through 40) with diameter and DC resistance lookup tables.
+NOT an impedance formula despite the UI label.
 
 ### Reactance
 ```
@@ -336,11 +391,19 @@ C_load = (C1*C2)/(C1+C2) + C_stray
 Rule of thumb: C1 = C2 = 2*(C_load - C_stray)
 ```
 
-### Via Capacitance (from decompiled FUN_004b8104)
+### Via Properties (from decompiled Solver_ViaProperties, 0x00427090)
 ```
-C_via uses 4/π = 1.2732 geometric correction for cylindrical geometry
-Based on parallel-plate approximation: C = ε₀ * εr * π*D*L / (4*d)
+Cross Section: A = pi/4 * ((d+2t)^2 - d^2)
+Capacitance:   C = 1.41 * Er * h * D_pad / (D_anti - D_pad)   [pF, Goldfarb constant]
+Inductance:    L = 5.08 * h * (ln(4h/d) + 1)                  [nH, h/d in inches]
+Impedance:     Z = sqrt(L_nH / (C_pF * 0.001))                [Ohms]
+Resonant Freq: f = 1/(2pi*sqrt(L_H * C_F)) / 1e6              [MHz]
+Step Response:  T = 2.2 * C_pF * Z / 2.0                      [ps]
+DC Resistance:  R = rho(T) * h / A   (with temp-corrected resistivity)
+Current:        I = 0.024 * dT^0.44 * A^0.725 * modifiers     [IPC-2221A internal]
 ```
+Note: 4/π (1.2732 at 0x004BA940) is used in Solver_FusingCurrent, NOT the via calculator.
+Via capacitance uses 1.41 (Goldfarb constant at 0x004342dc).
 
 ---
 

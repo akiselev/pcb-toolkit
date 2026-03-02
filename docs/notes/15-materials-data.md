@@ -150,7 +150,7 @@ Remaining Tg-to-material mapping tentative (needs disassembly verification).
 | H-J constant a | 0.457 | 0x004435C4 | Kirschning-Jansen dispersion |
 | H-J constant b | 0.67 | 0x004435CC | Kirschning-Jansen dispersion |
 | Copper roughness | 0.98 | DAT_008d6478 | FR-4 surface roughness factor |
-| Copper melting point | 1064.62°C | | Onderdonk equation |
+| Copper melting point | 1084.62°C | 0x004ba930 | Onderdonk equation (NOT 1064.62 which is gold) |
 | Copper resistivity | 1.724e-6 Ω·cm | | DC resistance |
 | Copper temp coeff | 0.00393 /°C | | Temperature adjustment |
 | µ₀ | 4π × 10⁻⁷ H/m | | Skin depth, inductance |

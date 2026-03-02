@@ -24,7 +24,9 @@ pub struct StriplineInput {
 /// Compute centered stripline characteristic impedance and derived quantities.
 ///
 /// # TODO
-/// - Saturn binary validation (formula may have additional corrections)
+/// - Full Cohn model from Saturn binary (~60 constants extracted at 0x00422bd8–0x00422dd4,
+///   but intermediate computation flow only partially reconstructed). See
+///   `docs/notes/ghidra-stripline.md` for extracted constants and partial analysis.
 /// - Asymmetric (offset) stripline variant
 pub fn calculate(input: &StriplineInput) -> Result<ImpedanceResult, CalcError> {
     let StriplineInput { width, height, thickness, er } = *input;

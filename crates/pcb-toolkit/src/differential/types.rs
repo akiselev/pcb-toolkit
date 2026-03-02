@@ -53,8 +53,24 @@ pub struct DifferentialResult {
     pub zodd: f64,
     /// Even-mode impedance (Ohms).
     pub zeven: f64,
-    /// Backward coupling coefficient Kb.
+    /// Backward coupling coefficient Kb (unterminated).
     pub kb: f64,
-    /// Coupling coefficient in dB.
+    /// Unterminated coupling coefficient in dB.
     pub kb_db: f64,
+    /// Terminated backward coupling coefficient.
+    pub kb_term: f64,
+    /// Terminated coupling coefficient in dB.
+    pub kb_term_db: f64,
+}
+
+/// Compute terminated backward coupling coefficient from unterminated Kb.
+///
+/// Formula: `Kb_term = (1 − √(1 − Kb²)) / Kb`
+///
+/// Saturn validation (PDF p.11): Kb=0.4041 → Kb_term=0.2111
+pub fn kb_terminated(kb: f64) -> f64 {
+    if kb.abs() < 1e-15 {
+        return 0.0;
+    }
+    (1.0 - (1.0 - kb * kb).sqrt()) / kb
 }

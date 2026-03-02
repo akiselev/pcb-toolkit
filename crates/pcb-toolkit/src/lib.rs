@@ -18,6 +18,7 @@ pub mod reactance;
 pub mod spacing;
 pub mod via;
 pub mod wavelength;
+pub mod wire_gauge;
 
 // Lookup tables
 pub mod tables;

@@ -35,28 +35,45 @@ Parallel: 1/R_total = 1/R1 + 1/R2 + 1/R3 + 1/R4
 ```
 With voltage input: calculates individual amperage and wattage for each resistor.
 
-### 4. PI Pad Attenuator
-RF attenuator design.
+### 4. PI Pad Attenuator (verified from decompilation)
+RF attenuator design. R1/R2 are shunt resistors; R3 is series resistor.
 #### Inputs
 - **Attenuation** (dB)
 - **Zin** - input impedance (Ω)
 - **Zout** - output impedance (Ω)
 
-#### Outputs - 3 resistor values (R1, R2, R3)
+#### Formulas (unmatched, from disassembly of mode 10)
 ```
-For matched impedance (Zin = Zout = Z):
 K = 10^(dB/20)
-R1 = R3 = Z * (K - 1) / (K + 1)
-R2 = Z * 2*K / (K² - 1)
+Zmax = max(Zin, Zout), Zmin = min(Zin, Zout)
+
+R1 = Zmax * (K²-1) / (K² - 2K*sqrt(Zmax/Zmin) + 1)
+R2 = Zmin * (K²-1) / (K² - 2K*sqrt(Zmin/Zmax) + 1)
+R3 = sqrt(Zmax*Zmin) * (K²-1) / (2K)
 ```
 
-### 5. T Pad Attenuator
-#### Same inputs as PI Pad
+#### Matched (Zin = Zout = Z):
 ```
-For matched impedance (Zin = Zout = Z):
+R1 = R2 = Z * (K+1)/(K-1)    [shunt]
+R3 = Z * (K²-1)/(2K)          [series]
+```
+
+### 5. T Pad Attenuator (verified from decompilation)
+R1/R2 are series resistors; R3 is shunt resistor.
+#### Formulas (unmatched)
+```
 K = 10^(dB/20)
-R1 = R3 = Z * (K² - 1) / (2*K)
-R2 = Z * (K + 1) / (K - 1)  -- wait, need to verify
+Zmax = max(Zin, Zout), Zmin = min(Zin, Zout)
+
+R3 = 2K * sqrt(Zmax*Zmin) / (K²-1)
+R1 = Zmax * (K²+1)/(K²-1) - R3
+R2 = Zmin * (K²+1)/(K²-1) - R3
+```
+
+#### Matched (Zin = Zout = Z):
+```
+R1 = R2 = Z * (K-1)/(K+1)    [series]
+R3 = 2KZ / (K²-1)             [shunt]
 ```
 
 ### 6. C Series / C Parallel
@@ -77,3 +94,7 @@ Parallel: 1/L_total = 1/L1 + 1/L2 + 1/L3 + 1/L4
 - Very straightforward formulas
 - Multiple sub-calculators in one tab
 - Good candidate for simple CLI subcommands
+- LED bias: I_led input is in mA (divided by 1000 internally)
+- Wattage: W = (Vsupply - Vled) * I_led_amps
+- Full decompilation details in `ghidra-ohmslaw.md`
+- All attenuator formulas verified via FPU opcode testing and impedance matching
