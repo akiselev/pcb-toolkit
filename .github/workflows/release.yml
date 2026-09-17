@@ -117,24 +117,22 @@ jobs:
           # Version is in workspace root Cargo.toml
           EXPECTED_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)"
 
-          publish_and_wait() {
+          # `cargo publish` blocks until the new version is available in the
+          # sparse index, so no extra propagation polling is needed (the old
+          # `cargo search` poll timed out on search-index lag even after a
+          # successful upload). The pre-check makes reruns idempotent.
+          publish() {
             local crate="$1"
+            local api="https://crates.io/api/v1/crates/${crate}/${EXPECTED_VERSION}"
+
+            if curl -fsS -A "pcb-toolkit release workflow (github.com/akiselev/pcb-toolkit)" "${api}" >/dev/null 2>&1; then
+              echo "${crate} ${EXPECTED_VERSION} is already on crates.io, skipping"
+              return 0
+            fi
 
             echo "Publishing ${crate} ${EXPECTED_VERSION}"
-            cargo publish -p "${crate}" --token "${CARGO_REGISTRY_TOKEN}"
-
-            for i in {1..120}; do
-              if cargo search "${crate}" --limit 1 | grep -q "${crate} = \"${EXPECTED_VERSION}\""; then
-                echo "${crate} ${EXPECTED_VERSION} found on crates.io after ${i} attempts"
-                return 0
-              fi
-              echo "Waiting for ${crate} ${EXPECTED_VERSION} propagation (attempt ${i}/120)..."
-              sleep 5
-            done
-
-            echo "ERROR: ${crate} ${EXPECTED_VERSION} not found on crates.io after 10 minutes"
-            exit 1
+            cargo publish -p "${crate}"
           }
 
-          publish_and_wait pcb-toolkit
-          publish_and_wait pcb-toolkit-cli
+          publish pcb-toolkit
+          publish pcb-toolkit-cli

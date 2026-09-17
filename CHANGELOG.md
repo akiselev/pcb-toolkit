@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 — 2026-09-17
+
+Release-pipeline fix; no calculator changes.
+
+- `pcb-toolkit-cli` could never be published: its workspace path dependency on
+  `pcb-toolkit` had no version requirement. Added `version` to the workspace
+  dependency.
+- The release workflow polled `cargo search` for propagation and timed out on
+  search-index lag even after a successful upload (v0.1.5 and v0.2.0 both
+  failed this way; `pcb-toolkit 0.2.0` is on crates.io, the CLI is not).
+  `cargo publish` already waits for index availability, so the poll is
+  removed and the step skips versions that already exist, making reruns safe.
+
 ## 0.2.0 — 2026-09-16
 
 Response to the numerical accuracy audit (`pcb-toolkit-audit/AUDIT.md`).

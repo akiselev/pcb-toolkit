@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -12,7 +12,9 @@ homepage = "https://github.com/akiselev/pcb-toolkit"
 authors = ["Alexander Kiselev <alex@akiselev.com>"]
 
 [workspace.dependencies]
-pcb-toolkit = { path = "crates/pcb-toolkit" }
+# `version` must track [workspace.package].version: cargo requires a version
+# requirement on path dependencies when publishing pcb-toolkit-cli.
+pcb-toolkit = { path = "crates/pcb-toolkit", version = "0.2.1" }
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
