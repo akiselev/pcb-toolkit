@@ -1,92 +1,75 @@
 # Implementation Status
 
-192 tests passing across 16 calculator modules and supporting infrastructure.
+Test count is whatever `cargo test --workspace` reports (currently 224 unit +
+29 audit-regression + 4 CLI integration tests); it is not evidence of physical
+accuracy. The evidence column below is.
 
-## Library Modules (`pcb-toolkit`)
+## Validation matrix
 
-| Module | Description | Tests | Notes |
-|--------|-------------|------:|-------|
-| `impedance::microstrip` | Microstrip (Hammerstad-Jensen 1980) | 3 | Decompiled from Saturn, frequency-dependent Er_eff |
-| `impedance::stripline` | Stripline (Cohn / Wadell) | 5 | |
-| `impedance::embedded` | Embedded microstrip (Brooks) | 5 | Cover height correction over ground plane |
-| `impedance::coplanar` | Coplanar waveguide (Wadell) | 10 | Complete elliptic integral model |
-| `impedance::common` | Shared Er_eff, thickness correction | 3 | |
-| `differential::edge_coupled_external` | Surface microstrip differential | 5 | |
-| `differential::edge_coupled_internal_sym` | Centered stripline differential | 6 | |
-| `differential::edge_coupled_internal_asym` | Offset stripline differential | 6 | |
-| `differential::edge_coupled_embedded` | Buried microstrip differential | 5 | |
-| `differential::broadside_coupled` | Broadside-coupled, shielded/unshielded | 6 | |
-| `current` | IPC-2221A + IPC-2152 with modifier charts | 12 | DC resistance, skin depth, voltage drop |
-| `fusing` | Onderdonk equation | 6 | Copper melting at 1084.62C |
-| `via` | Coaxial model: C, L, Z, f_res | 3 | Goldfarb capacitance (constant 1.41) |
-| `inductor` | Planar spiral (Mohan/Wheeler) | 5 | Square, hexagonal, octagonal, circular |
-| `crosstalk` | NEXT estimation | 6 | |
-| `ohms_law` | V=IR, LED bias, Pi/T-pad attenuators, R/C/L combinations | 12 | 10 sub-calculators |
-| `reactance` | Xc, Xl, resonant frequency | 5 | |
-| `wavelength` | Signal wavelength in dielectric | 4 | λ, λ/2, λ/4, λ/7, λ/10, λ/20 |
-| `ppm` | PPM/Hz conversion, crystal load cap | 5 | |
-| `padstack` | Thru-hole sizing, corner-to-corner diagonal | 6 | |
-| `spacing` | IPC-2221C lookup table | 11 | 8 device types, >500V linear extrapolation |
-| `wire_gauge` | AWG property lookup (44 gauges, 4/0-40) | 5 | |
-| `pdn` | PDN impedance: Z_target, C_plane, Xc | 3 | Verified against Saturn Help PDF |
-| `thermal` | Junction temperature: T_j = R*P + T_ambient | 4 | |
-| `materials` | 45-material substrate database | 7 | Er, Tg, roughness factor |
-| `units` | Length, Freq, Capacitance, Inductance, Temperature | 28 | FromStr with unit suffixes |
-| `copper` | Copper weight/plating/etch enums | 3 | 9 weights, 7 plating, 3 etch factors |
-| `tables` | Interpolation utilities | 4 | |
+Status meanings (`pcb_toolkit::ModelStatus`): **validated** = exact relation or
+published closed form checked against an independent evaluation inside its
+stated range; **compatibility** = published approximation kept for Saturn /
+IPC-2141 compatibility, internally consistent, accuracy checked only against
+the source's own examples; **experimental** = heuristic or partially
+reconstructed model, estimate only.
 
-**Total: 192 tests**
+| Module | Model | Status | Evidence | Known limits |
+|--------|-------|--------|----------|--------------|
+| `impedance::microstrip` | Hammerstad-Jensen 1980 + Kirschning-Jansen 1982 dispersion | validated | H-J closed forms reproduce the older Hammerstad form within 0.5%; continuity and monotonicity sweeps; dispersion range enforced | 0.01 ≤ W/H ≤ 100, εr ≤ 128, T < H; dispersion εr ≤ 20, H/λ₀ ≤ 0.13 |
+| `impedance::stripline` | Cohn 1954 conformal mapping + Wadell thickness | validated | Exact K(k)/K(k') via AGM; matches Wheeler closed form within 0.5%; parallel-plate limit; positive for all W/B | T < B; W/B ≲ 400 |
+| `impedance::embedded` | H-J surface line + exponential cover filling (Wadell) | compatibility | Continuous at zero cover, air-cover invariant, monotonic, correct deep-burial limit | Quasi-static only; cover εr = substrate εr |
+| `impedance::coplanar` | Conductor-backed CPW (Ghione-Naldi) + Gupta thickness | validated | Zero-thickness form agrees with an independent AGM evaluation to 1e-10; εeff bounded by materials; air line depends on ground height | T ≪ S; rejected once the thickness correction exceeds the gap |
+| `differential::edge_coupled_external` | IPC-2141A / AN-905 | compatibility | Saturn help p.11 vector reproduced | 0.1 < W/H < 2, 0.2 ≤ S/H ≤ 3; Zeven = Zo²/Zodd approximation |
+| `differential::edge_coupled_embedded` | IPC-2141A pair + cover filling | compatibility | Reduces exactly to the external pair at zero cover; air-cover invariant | As above |
+| `differential::edge_coupled_internal_sym` | Cohn 1955 coupled stripline + eq. 18/20/22 thickness | validated | Zero-thickness modes agree with an independent AGM evaluation; modes converge to the single strip for wide spacing; continuous at S = 5T | T < B; thickness corrections ±2% |
+| `differential::edge_coupled_internal_asym` | Half-space combination of Cohn modes | compatibility | Exact for H1 = H2; symmetric under plane swap; responds to offset at fixed total spacing | Inter-half-space fringing neglected |
+| `differential::broadside_coupled` | Electric/magnetic-wall symmetry + Cohn strips | compatibility | Reproduces the parallel-plate limit within 2%; monotonic in separation while the partner is nearest | Shielded only; unshielded returns `Unsupported` |
+| `current::calculate` | IPC-2221A power law | compatibility | Formula values reproduced; resistance corrected for temperature once | ±10–20% vs. IPC-2152 data |
+| `current::calculate_ipc2152_estimate` | IPC-2221A × Saturn-reconstructed modifiers | experimental | Modifiers linearly interpolated (continuous); no IPC-2152 chart data | Estimate only; not IPC-2152 |
+| `via` | Johnson lumped C/L + plated-barrel R | compatibility | Saturn help p.36 vector | h ≥ d_hole; lumped only, not a via transition model |
+| `fusing` | Onderdonk adiabatic | compatibility | Saturn help p.16 vector; domain −234 °C < Ta < Tm enforced | Melting onset only |
+| `inductor` | Mohan 1999 (modified Wheeler; current sheet for circle) | validated | Saturn help p.30 vector; Table I/II coefficients | ρ ≳ 0.1, s ≤ 3w; free-space DC inductance |
+| `crosstalk` | NEXT rule of thumb | experimental | None (does not reproduce Saturn's example) | Order of magnitude only |
+| `ohms_law` | Exact relations; attenuators | validated | ABCD-matrix oracle: input match and S21 exact for π and T pads | Ideal elements |
+| `reactance`, `wavelength`, `thermal`, `pdn`, `padstack`, `ppm` | Exact relations | validated | Saturn help vectors; algebra checked | Scope stated in each module |
+| `spacing` | IPC-2221C Table 6-1 (stored in mm) | validated | All 72 cells match the published table; >500 V slopes | Electrical clearance only |
+| `wire_gauge` | AWG table | compatibility | 44 entries consistent with the AWG progression within table rounding | `area_saturn_display` has no physical meaning |
+| `materials` | Saturn v8.44 presets | compatibility | Values extracted from the binary; provenance recorded per entry | Not manufacturer data |
+| `units`, `copper`, `tables` | Conversions | validated | Overflow rejected after scaling; mm derived from mils; `lerp` returns `Result` | — |
 
 ## CLI Commands (`pcb-toolkit-cli`)
 
 All 16 calculator commands are exposed. Every command supports `--json` output.
+Text output of any non-validated model ends with a `Model:` caveat line.
 
-| Command | Subcommands | Status |
-|---------|-------------|--------|
-| `impedance` | `microstrip`, `stripline`, `embedded`, `coplanar` | Complete |
-| `differential` | `edge-coupled-external`, `edge-coupled-internal-sym`, `edge-coupled-internal-asym`, `edge-coupled-embedded`, `broadside-coupled` | Complete |
-| `current` | *(none)* | Complete |
-| `fusing` | *(none)* | Complete |
-| `via` | *(none)* | Complete |
-| `inductor` | *(none)* | Complete |
-| `reactance` | *(none)* | Complete |
-| `wavelength` | *(none)* | Complete |
-| `ohms-law` | `eir`, `led-bias`, `pi-pad`, `t-pad`, `resistors-series`, `resistors-parallel`, `capacitors-series`, `capacitors-parallel`, `inductors-series`, `inductors-parallel` | Complete |
-| `ppm` | `hz-to-ppm`, `ppm-to-hz`, `xtal-load` | Complete |
-| `padstack` | `thru-hole`, `corner-to-corner` | Complete |
-| `spacing` | *(none)* | Complete |
-| `wire-gauge` | *(none)* | Complete |
-| `pdn` | *(none)* | Complete |
-| `thermal` | *(none)* | Complete |
-| `crosstalk` | *(none)* | Complete |
-
-## Materials Database
-
-45 substrate materials with verified Er, Tg, and roughness factor values. Data
-extracted from Saturn PCB Toolkit v8.44 binary via disassembly of `ComboBox1Change`
-at `0x00494dd4`.
-
-Includes: FR-4 variants, Rogers (RO/RT series), Isola, Getek, Arlon, Nelco
-(N4000/N7000), Ventec, PCL-FR series, Panasonic Megtron6, Kappa 438, Kapton, Teflon
-PTFE, and Air.
+| Command | Subcommands |
+|---------|-------------|
+| `impedance` | `microstrip`, `stripline`, `embedded`, `coplanar` |
+| `differential` | `edge-coupled-external`, `edge-coupled-internal-sym`, `edge-coupled-internal-asym`, `edge-coupled-embedded`, `broadside-coupled` (shielded only) |
+| `current` | IPC-2221A (the IPC-2152 estimate is library-only) |
+| `fusing`, `via`, `inductor`, `reactance`, `wavelength`, `spacing`, `wire-gauge`, `pdn`, `thermal`, `crosstalk` | — |
+| `ohms-law` | `eir`, `led-bias`, `pi-pad`, `t-pad`, `resistors-series`, `resistors-parallel`, `capacitors-series`, `capacitors-parallel`, `inductors-series`, `inductors-parallel` |
+| `ppm` | `hz-to-ppm`, `ppm-to-hz`, `xtal-load` |
+| `padstack` | `thru-hole`, `corner-to-corner` |
 
 ## Known Limitations
 
-- **IPC-2152 modifier tables**: The IPC-2152 current capacity calculator has the
-  modifier framework implemented but uses simplified piecewise approximations for
-  the chart-based modifiers (area, temperature, board thickness). The original
-  Saturn implementation uses lookup tables that are partially extracted.
-- **Broadside-coupled differential**: Low confidence — no Saturn test vector
-  available for validation. Formula implemented from published references.
-- **Crosstalk**: Marked as "unsupported" in the original Saturn UI. Our
-  implementation uses the standard NEXT estimation formula.
-- **Voltage divider**: Present in Saturn's Ohm's Law mode but not yet
-  implemented in the library.
-- **IPC-2152 solve-for-width**: Reverse mode (given target current, find
-  required trace width) not implemented.
+- **IPC-2152**: only an experimental estimate built on IPC-2221A with
+  Saturn-reconstructed modifier curves exists (`calculate_ipc2152_estimate`).
+  Real IPC-2152 chart data and a validated interpolation are not implemented.
+- **Unshielded broadside-coupled pairs**: no validated closed form; rejected.
+- **Embedded microstrip dispersion**: quasi-static only; a non-zero frequency
+  is rejected rather than ignored.
+- **Crosstalk**: rule-of-thumb estimate, marked experimental in the API and CLI.
+- **Coupled-line accuracy**: the external/embedded differential pairs use the
+  IPC-2141 empirical coupling term. No field-solver benchmark set exists in the
+  repository; the stripline family is exact for zero thickness only.
+- **Voltage divider** and **IPC-2152 solve-for-width** are not implemented.
 
 ## Reverse Engineering
 
-All 19 solver modes in the Saturn PCB Toolkit v8.44 binary have been fully
-analyzed. See `PROGRESS.md` for RE details and `docs/notes/` for per-calculator
-decompilation notes.
+All 19 solver modes in the Saturn PCB Toolkit v8.44 binary have been analyzed.
+See `PROGRESS.md` and `docs/notes/`. Saturn's own microstrip solver is
+Hammerstad-Jensen with Kirschning-Jansen dispersion (the decompiled constants
+in `docs/notes/stripline-formulas-clean.md` are exactly those models), which
+is what `impedance::microstrip` now implements.

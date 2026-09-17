@@ -1,91 +1,101 @@
-//! Coplanar waveguide (CPW over ground) impedance calculator.
+//! Conductor-backed coplanar waveguide (CBCPW / grounded CPW) impedance.
 //!
-//! Reference: Wadell, "Transmission Line Design Handbook", 1991.
+//! Zero-thickness model (Ghione & Naldi, Electronics Letters 1983; Wadell
+//! 1991 §3.6.2; the same expressions as scikit-rf's `CPW` with
+//! `has_metal_backside=True`):
+//!
+//! ```text
+//! k  = W / (W + 2S)
+//! k3 = tanh(πW/4H) / tanh(π(W + 2S)/4H)
+//! q  = K(k)/K(k'),   q3 = K(k3)/K(k3')
+//! εeff = (q + εr·q3) / (q + q3)
+//! Zo   = 60π / (√εeff · (q + q3))
+//! ```
+//!
+//! Finite thickness (Gupta, Garg, Bahl & Bhartia, *Microstrip Lines and
+//! Slotlines*, §7.2.3): the strip is widened and the gaps narrowed by
+//! `Δ = (1.25·T/π)·(1 + ln(4πW/T))`, and εeff is reduced by
+//! `0.7·(εeff − 1)·(T/S) / (q + 0.7·T/S)`.
+//!
+//! The coplanar ground strips are assumed to be wide compared with the gaps.
 
-use crate::CalcError;
-use crate::impedance::{common, types::ImpedanceResult};
+use crate::impedance::{microstrip, types::ImpedanceResult};
+use crate::math::elliptic_ratio;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
 
-/// Inputs for coplanar waveguide (CPW over ground) impedance calculation.
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Conductor-backed CPW (Ghione-Naldi conformal mapping) with Gupta thickness correction",
+    status: ModelStatus::Validated,
+    reference: "Ghione & Naldi, Electron. Lett. 19 (1983); Wadell 1991 §3.6.2; Gupta et al. §7.2.3",
+    validity: "Wide coplanar grounds; thickness correction assumes T ≪ S (t/S ≲ 0.1) and is rejected once Δ ≥ S; H not ≪ (W+2S)/24 (modulus resolution). Zero-thickness form checked to 1e-10 against an independent AGM evaluation",
+};
+
+/// Inputs for conductor-backed coplanar waveguide impedance calculation.
 /// All dimensions in mils.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CoplanarInput {
     /// Center conductor width (mils).
     pub width: f64,
-    /// Gap between center conductor and coplanar ground (mils).
+    /// Gap between center conductor and each coplanar ground (mils).
     pub gap: f64,
-    /// Substrate height to bottom ground plane (mils).
+    /// Substrate height to the bottom ground plane (mils).
     pub height: f64,
-    /// Conductor thickness (mils).
+    /// Conductor thickness (mils). 0 selects the zero-thickness model.
     pub thickness: f64,
     /// Substrate relative permittivity.
     pub er: f64,
 }
 
-/// Complete elliptic integral ratio K(k)/K(k') via the Hilberg approximation.
-///
-/// Returns K(k)/K(k'), where k' = sqrt(1 - k²).
-///
-/// For k <= 1/sqrt(2): K(k)/K(k') = π / ln(2·(1+sqrt(k'))/(1-sqrt(k')))
-/// For k >  1/sqrt(2): K(k)/K(k') = (1/π) · ln(2·(1+sqrt(k))/(1-sqrt(k)))
-fn elliptic_ratio(k: f64) -> f64 {
-    let threshold = 1.0 / std::f64::consts::SQRT_2;
-    if k <= threshold {
-        let kp = (1.0 - k * k).sqrt();
-        std::f64::consts::PI / (2.0 * (1.0 + kp.sqrt()) / (1.0 - kp.sqrt())).ln()
-    } else {
-        (1.0 / std::f64::consts::PI) * (2.0 * (1.0 + k.sqrt()) / (1.0 - k.sqrt())).ln()
-    }
-}
-
-/// Compute coplanar waveguide (CPW over ground) impedance and derived quantities.
+/// Compute conductor-backed CPW impedance and derived quantities.
 pub fn calculate(input: &CoplanarInput) -> Result<ImpedanceResult, CalcError> {
-    let CoplanarInput { width, gap, height, thickness: _, er } = *input;
+    let CoplanarInput {
+        width,
+        gap,
+        height,
+        thickness,
+        er,
+    } = *input;
 
-    if width <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "width", value: width });
-    }
-    if gap <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "gap", value: gap });
-    }
-    if height <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "height", value: height });
-    }
-    if er < 1.0 {
+    validate::positive("width", width)?;
+    validate::positive("gap", gap)?;
+    validate::positive("height", height)?;
+    validate::non_negative("thickness", thickness)?;
+    validate::er(er)?;
+
+    // Thickness: widen the strip and narrow the gaps (Gupta et al.).
+    let delta = if thickness > 0.0 {
+        (1.25 * thickness / std::f64::consts::PI)
+            * (1.0 + (4.0 * std::f64::consts::PI * width / thickness).ln())
+    } else {
+        0.0
+    };
+    if delta >= gap {
         return Err(CalcError::OutOfRange {
-            name: "er",
-            value: er,
-            expected: ">= 1.0",
+            name: "thickness",
+            value: thickness,
+            expected: "thickness correction Δ = 1.25T/π·(1 + ln(4πW/T)) must be smaller than the gap",
         });
     }
+    let w = width + delta;
+    let s = gap - delta;
 
-    // Modulus for the air-region elliptic integral
-    let k = width / (width + 2.0 * gap);
+    let k = w / (w + 2.0 * s);
+    let k3 = (std::f64::consts::PI * w / (4.0 * height)).tanh()
+        / (std::f64::consts::PI * (w + 2.0 * s) / (4.0 * height)).tanh();
 
-    // Modulus for the substrate elliptic integral (via hyperbolic tangents)
-    let k3 = (std::f64::consts::PI * width / (4.0 * height)).tanh()
-        / (std::f64::consts::PI * (width + 2.0 * gap) / (4.0 * height)).tanh();
+    let q = elliptic_ratio(k)?;
+    let q3 = elliptic_ratio(k3)?;
 
-    // Effective dielectric constant (Wadell CPW-over-ground formula)
-    //   Er_eff = 1 + (Er-1)/2 · [K(k')/K(k)] · [K(k3)/K(k3')]
-    // Since elliptic_ratio(k) = K(k)/K(k'):
-    //   K(k')/K(k) = 1 / elliptic_ratio(k)
-    //   K(k3)/K(k3') = elliptic_ratio(k3)
-    let er_eff = 1.0 + (er - 1.0) / 2.0 * (1.0 / elliptic_ratio(k)) * elliptic_ratio(k3);
+    let mut er_eff = (q + er * q3) / (q + q3);
+    if thickness > 0.0 {
+        let ts = thickness / gap;
+        er_eff -= 0.7 * (er_eff - 1.0) * ts / (q + 0.7 * ts);
+    }
+    let zo = 60.0 * std::f64::consts::PI / (er_eff.sqrt() * (q + q3));
 
-    // Characteristic impedance
-    //   Z0 = 30π / (sqrt(Er_eff) · K(k)/K(k'))
-    let zo = (30.0 * std::f64::consts::PI) / (er_eff.sqrt() * elliptic_ratio(k));
-
-    let tpd = common::propagation_delay(er_eff);
-    let lo = common::inductance_per_length(zo, tpd);
-    let co = common::capacitance_per_length(zo, tpd);
-
-    Ok(ImpedanceResult {
-        zo,
-        er_eff,
-        tpd_ps_per_in: tpd,
-        lo_nh_per_in: lo,
-        co_pf_per_in: co,
-    })
+    microstrip::finish(zo, er_eff)
 }
 
 #[cfg(test)]
@@ -93,113 +103,155 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
+    fn cpw(width: f64, gap: f64, height: f64, thickness: f64, er: f64) -> CoplanarInput {
+        CoplanarInput {
+            width,
+            gap,
+            height,
+            thickness,
+            er,
+        }
+    }
+
     fn typical() -> CoplanarInput {
-        CoplanarInput { width: 10.0, gap: 5.0, height: 10.0, thickness: 1.4, er: 4.6 }
+        cpw(10.0, 5.0, 10.0, 1.4, 4.6)
     }
 
     #[test]
-    fn reasonable_impedance() {
-        let result = calculate(&typical()).unwrap();
-        assert!(
-            result.zo >= 30.0 && result.zo <= 150.0,
-            "Z0 = {} should be in 30–150 Ω range",
-            result.zo
-        );
+    fn matches_independent_zero_thickness_reference() {
+        // Independent AGM evaluation of the backed-CPW conformal-mapping model
+        // (audit A03): W=10, S=5, H=5, εr=4.6 → 46.0957448 Ω, εeff 3.3419380.
+        let r = calculate(&cpw(10.0, 5.0, 5.0, 0.0, 4.6)).unwrap();
+        assert_relative_eq!(r.zo, 46.0957448064, max_relative = 1e-9);
+        assert_relative_eq!(r.er_eff, 3.34193797552, max_relative = 1e-9);
+    }
+
+    #[test]
+    fn er_eff_is_bounded_by_its_materials() {
+        for (h, er) in [(2.0, 4.6), (5.0, 4.6), (100.0, 10.2), (0.5, 2.2)] {
+            let r = calculate(&cpw(10.0, 5.0, h, 0.0, er)).unwrap();
+            assert!(
+                r.er_eff >= 1.0 && r.er_eff <= er,
+                "h={h} er={er} -> {}",
+                r.er_eff
+            );
+        }
+    }
+
+    #[test]
+    fn air_filled_line_depends_on_ground_height() {
+        let low = calculate(&cpw(10.0, 5.0, 2.0, 0.0, 1.0)).unwrap();
+        let high = calculate(&cpw(10.0, 5.0, 100.0, 0.0, 1.0)).unwrap();
+        assert!(low.zo < high.zo - 1.0, "low {} high {}", low.zo, high.zo);
+        assert_relative_eq!(low.zo, 50.6287, max_relative = 1e-4);
+        assert_relative_eq!(high.zo, 120.3543, max_relative = 1e-4);
+    }
+
+    #[test]
+    fn far_bottom_ground_approaches_ungrounded_cpw() {
+        // As H → ∞, k3 → k and εeff → (εr + 1)/2, Zo → 30π/(√εeff·q).
+        let r = calculate(&cpw(10.0, 5.0, 1e5, 0.0, 4.6)).unwrap();
+        let k: f64 = 0.5;
+        let q = elliptic_ratio(k).unwrap();
+        let expected = 30.0 * std::f64::consts::PI / (2.8_f64.sqrt() * q);
+        assert_relative_eq!(r.er_eff, 2.8, max_relative = 1e-4);
+        assert_relative_eq!(r.zo, expected, max_relative = 1e-4);
+    }
+
+    #[test]
+    fn thickness_is_not_ignored_and_lowers_impedance() {
+        let thin = calculate(&cpw(10.0, 5.0, 10.0, 0.0, 4.6)).unwrap();
+        let thick = calculate(&typical()).unwrap();
+        assert!(thick.zo < thin.zo);
+        assert!(thick.er_eff < thin.er_eff);
+        // Continuity at T → 0.
+        let tiny = calculate(&cpw(10.0, 5.0, 10.0, 1e-9, 4.6)).unwrap();
+        assert_relative_eq!(tiny.zo, thin.zo, max_relative = 1e-6);
     }
 
     #[test]
     fn narrower_gap_lowers_impedance() {
         let wide_gap = calculate(&typical()).unwrap();
-        let narrow_gap = calculate(&CoplanarInput { gap: 2.0, ..typical() }).unwrap();
-        assert!(
-            narrow_gap.zo < wide_gap.zo,
-            "narrow gap Z0 {} should be < wide gap Z0 {}",
-            narrow_gap.zo,
-            wide_gap.zo
-        );
+        let narrow_gap = calculate(&CoplanarInput {
+            gap: 4.0,
+            ..typical()
+        })
+        .unwrap();
+        assert!(narrow_gap.zo < wide_gap.zo);
+        let wide_gap = calculate(&CoplanarInput {
+            thickness: 0.0,
+            ..typical()
+        })
+        .unwrap();
+        let narrow_gap = calculate(&CoplanarInput {
+            gap: 2.0,
+            thickness: 0.0,
+            ..typical()
+        })
+        .unwrap();
+        assert!(narrow_gap.zo < wide_gap.zo);
     }
 
     #[test]
     fn higher_er_lowers_impedance() {
         let low_er = calculate(&typical()).unwrap();
-        let high_er = calculate(&CoplanarInput { er: 9.8, ..typical() }).unwrap();
-        assert!(
-            high_er.zo < low_er.zo,
-            "high-Er Z0 {} should be < low-Er Z0 {}",
-            high_er.zo,
-            low_er.zo
-        );
-    }
-
-    #[test]
-    fn er_eff_between_one_and_er() {
-        let result = calculate(&typical()).unwrap();
-        assert!(
-            result.er_eff > 1.0 && result.er_eff < 4.6,
-            "er_eff = {} should be in (1.0, 4.6)",
-            result.er_eff
-        );
-    }
-
-    #[test]
-    fn wide_gap_approaches_microstrip_range() {
-        // With a very wide gap the coplanar grounds are far from the center conductor;
-        // the bottom ground plane dominates and Z0 should be in the microstrip ballpark.
-        let result = calculate(&CoplanarInput {
-            width: 10.0,
-            gap: 1000.0,
-            height: 10.0,
-            thickness: 1.4,
-            er: 4.6,
+        let high_er = calculate(&CoplanarInput {
+            er: 9.8,
+            ..typical()
         })
         .unwrap();
-        // With the coplanar grounds removed, the field is predominantly in air above
-        // the substrate; Er_eff approaches 1 and Z0 rises well above the microstrip
-        // value.  The Wadell CPW formula yields roughly 140 Ω for this geometry.
-        // Accept anything in the plausible 40–200 Ω transmission-line range.
+        assert!(high_er.zo < low_er.zo);
+    }
+
+    #[test]
+    fn rejects_invalid_inputs() {
         assert!(
-            result.zo > 40.0 && result.zo < 200.0,
-            "wide-gap Z0 {} should be in a plausible transmission-line range (40–200 Ω)",
-            result.zo
+            calculate(&CoplanarInput {
+                width: 0.0,
+                ..typical()
+            })
+            .is_err()
         );
-    }
-
-    #[test]
-    fn rejects_non_positive_width() {
-        let result = calculate(&CoplanarInput { width: 0.0, ..typical() });
-        assert!(result.is_err());
-        let result = calculate(&CoplanarInput { width: -1.0, ..typical() });
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_non_positive_gap() {
-        let result = calculate(&CoplanarInput { gap: 0.0, ..typical() });
-        assert!(result.is_err());
-        let result = calculate(&CoplanarInput { gap: -5.0, ..typical() });
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_non_positive_height() {
-        let result = calculate(&CoplanarInput { height: 0.0, ..typical() });
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_er_below_one() {
-        let result = calculate(&CoplanarInput { er: 0.5, ..typical() });
-        assert!(result.is_err());
+        assert!(
+            calculate(&CoplanarInput {
+                gap: -5.0,
+                ..typical()
+            })
+            .is_err()
+        );
+        assert!(
+            calculate(&CoplanarInput {
+                height: 0.0,
+                ..typical()
+            })
+            .is_err()
+        );
+        assert!(
+            calculate(&CoplanarInput {
+                er: 0.5,
+                ..typical()
+            })
+            .is_err()
+        );
+        assert!(
+            calculate(&CoplanarInput {
+                width: f64::NAN,
+                ..typical()
+            })
+            .is_err()
+        );
+        // Thickness correction larger than the gap.
+        assert!(calculate(&cpw(10.0, 1.0, 10.0, 1.4, 4.6)).is_err());
     }
 
     #[test]
     fn derived_quantities_consistent() {
         let r = calculate(&typical()).unwrap();
-        // Lo = Zo × Tpd (ps/in → ns/in ÷1000)
-        let lo_check = r.zo * r.tpd_ps_per_in / 1000.0;
-        assert_relative_eq!(r.lo_nh_per_in, lo_check, max_relative = 1e-10);
-        // Co = Tpd / Zo (same unit bookkeeping)
-        let co_check = (r.tpd_ps_per_in / 1000.0) / r.zo * 1000.0;
-        assert_relative_eq!(r.co_pf_per_in, co_check, max_relative = 1e-10);
+        assert_relative_eq!(
+            r.lo_nh_per_in,
+            r.zo * r.tpd_ps_per_in / 1000.0,
+            max_relative = 1e-10
+        );
+        assert_relative_eq!(r.co_pf_per_in, r.tpd_ps_per_in / r.zo, max_relative = 1e-10);
     }
 }

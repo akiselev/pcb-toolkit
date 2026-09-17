@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 
 use pcb_toolkit::ohms_law;
+use pcb_toolkit::units::{Capacitance, Inductance, Resistance};
 
 use crate::output;
 
@@ -21,9 +22,9 @@ pub enum OhmsLawSub {
         /// Current in Amperes.
         #[arg(long)]
         current: Option<f64>,
-        /// Resistance in Ohms.
+        /// Resistance [Ohm, mOhm, kOhm/k, MOhm/M]. Default unit: Ohm.
         #[arg(long)]
-        resistance: Option<f64>,
+        resistance: Option<Resistance>,
     },
 
     /// LED bias resistor calculator.
@@ -44,9 +45,9 @@ pub enum OhmsLawSub {
         /// Attenuation in dB (> 0).
         #[arg(long)]
         attenuation: f64,
-        /// System impedance in Ohms.
+        /// System impedance [Ohm, kOhm/k]. Default unit: Ohm.
         #[arg(long)]
-        impedance: f64,
+        impedance: Resistance,
     },
 
     /// Symmetric T-pad attenuator.
@@ -54,58 +55,62 @@ pub enum OhmsLawSub {
         /// Attenuation in dB (> 0).
         #[arg(long)]
         attenuation: f64,
-        /// System impedance in Ohms.
+        /// System impedance [Ohm, kOhm/k]. Default unit: Ohm.
         #[arg(long)]
-        impedance: f64,
+        impedance: Resistance,
     },
 
     /// Resistors in series.
     ResistorsSeries {
-        /// Resistor values in Ohms.
+        /// Resistor values [Ohm, mOhm, kOhm/k, MOhm/M]. Default unit: Ohm.
         #[arg(required = true, num_args = 1..)]
-        values: Vec<f64>,
+        values: Vec<Resistance>,
     },
 
     /// Resistors in parallel.
     ResistorsParallel {
-        /// Resistor values in Ohms.
+        /// Resistor values [Ohm, mOhm, kOhm/k, MOhm/M]. Default unit: Ohm.
         #[arg(required = true, num_args = 1..)]
-        values: Vec<f64>,
+        values: Vec<Resistance>,
     },
 
     /// Capacitors in series.
     CapacitorsSeries {
-        /// Capacitor values in Farads.
+        /// Capacitor values [F, uF, nF, pF]. Default unit: F.
         #[arg(required = true, num_args = 1..)]
-        values: Vec<f64>,
+        values: Vec<Capacitance>,
     },
 
     /// Capacitors in parallel.
     CapacitorsParallel {
-        /// Capacitor values in Farads.
+        /// Capacitor values [F, uF, nF, pF]. Default unit: F.
         #[arg(required = true, num_args = 1..)]
-        values: Vec<f64>,
+        values: Vec<Capacitance>,
     },
 
     /// Inductors in series.
     InductorsSeries {
-        /// Inductor values in Henries.
+        /// Inductor values [H, mH, uH, nH]. Default unit: H.
         #[arg(required = true, num_args = 1..)]
-        values: Vec<f64>,
+        values: Vec<Inductance>,
     },
 
     /// Inductors in parallel.
     InductorsParallel {
-        /// Inductor values in Henries.
+        /// Inductor values [H, mH, uH, nH]. Default unit: H.
         #[arg(required = true, num_args = 1..)]
-        values: Vec<f64>,
+        values: Vec<Inductance>,
     },
 }
 
 pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
     match &args.sub {
-        OhmsLawSub::Eir { voltage, current, resistance } => {
-            let result = ohms_law::eir(*voltage, *current, *resistance)
+        OhmsLawSub::Eir {
+            voltage,
+            current,
+            resistance,
+        } => {
+            let result = ohms_law::eir(*voltage, *current, resistance.map(|r| r.ohms()))
                 .context("E-I-R calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
@@ -119,7 +124,11 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
             }
         }
 
-        OhmsLawSub::LedBias { supply, led_v, led_current } => {
+        OhmsLawSub::LedBias {
+            supply,
+            led_v,
+            led_current,
+        } => {
             let result = ohms_law::led_bias(*supply, *led_v, *led_current)
                 .context("LED bias calculation failed")?;
             if json {
@@ -132,8 +141,11 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
             }
         }
 
-        OhmsLawSub::PiPad { attenuation, impedance } => {
-            let result = ohms_law::pi_pad(*attenuation, *impedance)
+        OhmsLawSub::PiPad {
+            attenuation,
+            impedance,
+        } => {
+            let result = ohms_law::pi_pad(*attenuation, impedance.ohms())
                 .context("Pi-pad calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
@@ -142,13 +154,22 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
                 println!("─────────────────");
                 println!("  Attenuation = {:.4} dB", result.attenuation_db);
                 println!("  K           = {:.6}", result.k);
-                println!("  R series    = {:.4} Ω", result.r_series_ohm);
-                println!("  R shunt     = {:.4} Ω", result.r_shunt_ohm);
+                println!(
+                    "  R series    = {:.4} Ω  (single centre element)",
+                    result.r_series_ohm
+                );
+                println!(
+                    "  R shunt     = {:.4} Ω  (each of the two outer elements)",
+                    result.r_shunt_ohm
+                );
             }
         }
 
-        OhmsLawSub::TPad { attenuation, impedance } => {
-            let result = ohms_law::t_pad(*attenuation, *impedance)
+        OhmsLawSub::TPad {
+            attenuation,
+            impedance,
+        } => {
+            let result = ohms_law::t_pad(*attenuation, impedance.ohms())
                 .context("T-pad calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
@@ -157,14 +178,21 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
                 println!("────────────────");
                 println!("  Attenuation = {:.4} dB", result.attenuation_db);
                 println!("  K           = {:.6}", result.k);
-                println!("  R series    = {:.4} Ω", result.r_series_ohm);
-                println!("  R shunt     = {:.4} Ω", result.r_shunt_ohm);
+                println!(
+                    "  R series    = {:.4} Ω  (each of the two outer elements)",
+                    result.r_series_ohm
+                );
+                println!(
+                    "  R shunt     = {:.4} Ω  (single centre element)",
+                    result.r_shunt_ohm
+                );
             }
         }
 
         OhmsLawSub::ResistorsSeries { values } => {
-            let result = ohms_law::resistors_series(values)
-                .context("resistors series calculation failed")?;
+            let result =
+                ohms_law::resistors_series(&values.iter().map(|v| v.ohms()).collect::<Vec<_>>())
+                    .context("resistors series calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -175,8 +203,9 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
         }
 
         OhmsLawSub::ResistorsParallel { values } => {
-            let result = ohms_law::resistors_parallel(values)
-                .context("resistors parallel calculation failed")?;
+            let result =
+                ohms_law::resistors_parallel(&values.iter().map(|v| v.ohms()).collect::<Vec<_>>())
+                    .context("resistors parallel calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -187,8 +216,9 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
         }
 
         OhmsLawSub::CapacitorsSeries { values } => {
-            let result = ohms_law::capacitors_series(values)
-                .context("capacitors series calculation failed")?;
+            let result =
+                ohms_law::capacitors_series(&values.iter().map(|v| v.farads()).collect::<Vec<_>>())
+                    .context("capacitors series calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -199,8 +229,10 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
         }
 
         OhmsLawSub::CapacitorsParallel { values } => {
-            let result = ohms_law::capacitors_parallel(values)
-                .context("capacitors parallel calculation failed")?;
+            let result = ohms_law::capacitors_parallel(
+                &values.iter().map(|v| v.farads()).collect::<Vec<_>>(),
+            )
+            .context("capacitors parallel calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -211,8 +243,9 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
         }
 
         OhmsLawSub::InductorsSeries { values } => {
-            let result = ohms_law::inductors_series(values)
-                .context("inductors series calculation failed")?;
+            let result =
+                ohms_law::inductors_series(&values.iter().map(|v| v.henries()).collect::<Vec<_>>())
+                    .context("inductors series calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -223,8 +256,10 @@ pub fn run(args: &OhmsLawArgs, json: bool) -> Result<()> {
         }
 
         OhmsLawSub::InductorsParallel { values } => {
-            let result = ohms_law::inductors_parallel(values)
-                .context("inductors parallel calculation failed")?;
+            let result = ohms_law::inductors_parallel(
+                &values.iter().map(|v| v.henries()).collect::<Vec<_>>(),
+            )
+            .context("inductors parallel calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {

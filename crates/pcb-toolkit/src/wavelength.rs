@@ -4,10 +4,19 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::CalcError;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Guided wavelength λ = c/(f·√εeff)",
+    status: ModelStatus::Validated,
+    reference: "Exact relation; c = 11.803 in/ns (Saturn rounding, 0.001%)",
+    validity: "Any f > 0; εeff is the *effective* permittivity of the line, not the bulk εr, and must be supplied by the caller",
+};
 
 /// Speed of light expressed as inches per nanosecond.
-const C_IN_PER_NS: f64 = 11.803;
+const C_IN_PER_NS: f64 = crate::constants::SPEED_OF_LIGHT_IN_NS;
 
 /// Result of a wavelength calculation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,18 +41,15 @@ pub struct WavelengthResult {
 ///
 /// # Arguments
 /// - `freq_hz` — frequency in Hz (must be > 0)
-/// - `er_eff` — effective relative permittivity (must be ≥ 1.0)
+/// - `er_eff` — effective relative permittivity of the line (must be ≥ 1.0).
+///   For a microstrip this is the `er_eff` reported by the impedance
+///   calculator, not the substrate's bulk εr.
 ///
 /// # Errors
-/// Returns [`CalcError::OutOfRange`] if inputs are out of valid range.
+/// Returns an error if inputs are non-finite or out of range.
 pub fn wavelength(freq_hz: f64, er_eff: f64) -> Result<WavelengthResult, CalcError> {
-    if freq_hz <= 0.0 {
-        return Err(CalcError::OutOfRange {
-            name: "freq_hz",
-            value: freq_hz,
-            expected: "> 0",
-        });
-    }
+    validate::positive_quantity("freq_hz", freq_hz)?;
+    validate::finite("er_eff", er_eff)?;
     if er_eff < 1.0 {
         return Err(CalcError::OutOfRange {
             name: "er_eff",
@@ -52,9 +58,10 @@ pub fn wavelength(freq_hz: f64, er_eff: f64) -> Result<WavelengthResult, CalcErr
         });
     }
 
-    let period_ns = 1.0 / freq_hz * 1e9;
+    let period_ns = validate::finite_result("period_ns", 1.0 / freq_hz * 1e9)?;
     // λ = c × T_ns / √Er_eff  (c in in/ns, T in ns → λ in inches)
-    let lambda_inches = C_IN_PER_NS * period_ns / er_eff.sqrt();
+    let lambda_inches =
+        validate::finite_result("lambda_inches", C_IN_PER_NS * period_ns / er_eff.sqrt())?;
 
     Ok(WavelengthResult {
         lambda_inches,
@@ -82,11 +89,31 @@ mod tests {
         let result = wavelength(100e6, 4.0).unwrap();
         assert_relative_eq!(result.period_ns, 10.0, epsilon = 1e-9);
         assert_relative_eq!(result.lambda_inches, 59.015, epsilon = 1e-2);
-        assert_relative_eq!(result.lambda_half_inches, result.lambda_inches / 2.0, epsilon = 1e-10);
-        assert_relative_eq!(result.lambda_quarter_inches, result.lambda_inches / 4.0, epsilon = 1e-10);
-        assert_relative_eq!(result.lambda_seventh_inches, result.lambda_inches / 7.0, epsilon = 1e-10);
-        assert_relative_eq!(result.lambda_tenth_inches, result.lambda_inches / 10.0, epsilon = 1e-10);
-        assert_relative_eq!(result.lambda_twentieth_inches, result.lambda_inches / 20.0, epsilon = 1e-10);
+        assert_relative_eq!(
+            result.lambda_half_inches,
+            result.lambda_inches / 2.0,
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(
+            result.lambda_quarter_inches,
+            result.lambda_inches / 4.0,
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(
+            result.lambda_seventh_inches,
+            result.lambda_inches / 7.0,
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(
+            result.lambda_tenth_inches,
+            result.lambda_inches / 10.0,
+            epsilon = 1e-10
+        );
+        assert_relative_eq!(
+            result.lambda_twentieth_inches,
+            result.lambda_inches / 20.0,
+            epsilon = 1e-10
+        );
     }
 
     #[test]
@@ -97,6 +124,8 @@ mod tests {
     #[test]
     fn error_on_er_below_one() {
         assert!(wavelength(100e6, 0.5).is_err());
+        assert!(wavelength(f64::NAN, 4.0).is_err());
+        assert!(wavelength(1e-320, 4.0).is_err());
     }
 
     #[test]

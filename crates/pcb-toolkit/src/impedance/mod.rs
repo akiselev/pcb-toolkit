@@ -1,10 +1,8 @@
 //! Transmission line impedance calculators.
 //!
-//! Supports multiple topologies: microstrip, stripline, embedded microstrip,
-//! coplanar waveguide. Each topology module computes Zo, Er_eff, Tpd, Lo, Co.
-//!
-//! Primary reference: Hammerstad & Jensen, "Accurate Models for Microstrip
-//! Computer-Aided Design", IEEE MTT-S 1980.
+//! Supports microstrip, embedded microstrip, stripline and conductor-backed
+//! coplanar waveguide. Each topology module computes Zo, Er_eff, Tpd, Lo, Co
+//! and exposes a `MODEL` constant describing its provenance and range.
 
 pub mod common;
 pub mod coplanar;

@@ -20,9 +20,13 @@ pcb-toolkit-cli (binary: CLI interface, output formatting)
 
 ## Design Philosophy
 
-- **Match Saturn output**: Our primary validation target is Saturn PCB Toolkit v8.44. When
-  implementing formulas, match its output to within display rounding. Test vectors come from
-  the Saturn help PDF and manual testing.
+- **Physics first, Saturn compatibility second**: every calculator exposes a `MODEL`
+  constant (`pcb_toolkit::ModelInfo`) naming the published model, its validity range and its
+  `ModelStatus` (validated / compatibility / experimental). Saturn PCB Toolkit v8.44 help-PDF
+  examples are kept as compatibility vectors, but a Saturn match is not treated as evidence of
+  accuracy; invariants (continuity, symmetry, limits) and independent evaluations are.
+- **Validate everything**: use the `validate` helpers. Reject NaN/∞, check model domains,
+  and return `CalcError::NonFiniteResult` rather than a non-finite number. Never clamp.
 - **f64 everywhere**: All calculations use IEEE 754 double precision. No arbitrary precision,
   no `num` crate, no `uom` crate. Standard library math functions suffice.
 - **Canonical internal units**: Convert at the API boundary, compute internally in canonical
@@ -68,21 +72,24 @@ blocks. Use `approx` for float comparison (`assert_relative_eq!`).
 
 ## Calculator Modules
 
-| Module                  | Formula Source         | Status                             |
-| ----------------------- | ---------------------- | ---------------------------------- |
-| `impedance::microstrip` | Hammerstad-Jensen 1980 | Decompiled, test vectors available |
-| `impedance::stripline`  | Cohn / Wadell          | Published formulas                 |
-| `impedance::embedded`   | Brooks                 | Published formulas                 |
-| `impedance::coplanar`   | Wadell                 | Published formulas                 |
-| `differential::*`       | Coupled-line theory    | 6 layer types                      |
-| `via`                   | Coaxial model          | Partially decompiled               |
-| `current`               | IPC-2152 / IPC-2221A   | IPC-2221A formula known            |
-| `fusing`                | Onderdonk equation     | Fully documented                   |
-| `inductor`              | Mohan/Wheeler modified | Fully documented                   |
-| `padstack`              | Geometry               | Fully documented                   |
-| `crosstalk`             | NEXT estimation        | Marked unsupported in original     |
-| `ohms_law`              | V=IR, attenuators      | Trivial                            |
-| `reactance`             | Xc/Xl/f_res            | Trivial                            |
-| `wavelength`            | λ = c/(f√Er)           | Decompiled                         |
-| `ppm`                   | PPM↔Hz, XTAL caps      | Trivial                            |
-| `spacing`               | IPC-2221C lookup       | Need table data                    |
+| Module                  | Model                                            | Status        |
+| ----------------------- | ------------------------------------------------ | ------------- |
+| `impedance::microstrip` | Hammerstad-Jensen 1980 + Kirschning-Jansen 1982  | validated     |
+| `impedance::stripline`  | Cohn 1954 conformal mapping + Wadell thickness   | validated     |
+| `impedance::embedded`   | H-J surface line + exponential cover filling     | compatibility |
+| `impedance::coplanar`   | Conductor-backed CPW (Ghione-Naldi) + Gupta T    | validated     |
+| `differential::*`       | IPC-2141A (external/embedded); Cohn 1955 (stripline family) | compat./validated |
+| `via`                   | Johnson lumped C/L + barrel resistance           | compatibility |
+| `current`               | IPC-2221A; IPC-2152-style estimate (experimental)| compat./exp.  |
+| `fusing`                | Onderdonk adiabatic                              | compatibility |
+| `inductor`              | Mohan 1999 (Wheeler / current sheet)             | validated     |
+| `padstack`              | Geometry                                         | validated     |
+| `crosstalk`             | NEXT rule of thumb                               | experimental  |
+| `ohms_law`              | Exact relations; ABCD-verified attenuators       | validated     |
+| `reactance`             | Xc/Xl/f_res                                      | validated     |
+| `wavelength`            | λ = c/(f√εeff)                                   | validated     |
+| `ppm`                   | PPM↔Hz, XTAL load                                | validated     |
+| `spacing`               | IPC-2221C Table 6-1 (mm source values)           | validated     |
+
+See `STATUS.md` for the evidence behind each status and `CHANGELOG.md` for the
+0.2.0 audit response.

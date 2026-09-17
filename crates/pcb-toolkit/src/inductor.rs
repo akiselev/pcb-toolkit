@@ -1,19 +1,34 @@
-//! Planar spiral inductor calculator (Mohan/Wheeler modified).
+//! Planar spiral inductor calculator.
 //!
-//! Reference: Mohan, Hershenson, Boyd, Lee — "Simple Accurate Expressions
-//! for Planar Spiral Inductances", IEEE JSSC, October 1999.
+//! Reference: Mohan, Hershenson, Boyd, Lee, "Simple Accurate Expressions
+//! for Planar Spiral Inductances", IEEE JSSC 34(10), October 1999.
 //!
-//! Supports square, hexagonal, octagonal, and circular geometries.
+//! * Square, hexagonal, octagonal: modified Wheeler expression (paper eq. 2,
+//!   Table I coefficients).
+//! * Circular: current-sheet expression (paper eq. 3, Table II coefficients),
+//!   because Table I gives no circular coefficients.
+//!
+//! The paper reports typical errors of 2–3% (max ~8%) against field-solver
+//! and measured on-chip spirals with `ρ` (fill ratio) ≳ 0.1 and s ≤ 3w. It
+//! is a free-space, low-frequency (below self-resonance) inductance; ground
+//! planes close to the spiral, substrate eddy currents and the distributed
+//! capacitance that sets the self-resonant frequency are not modelled.
 
 use serde::{Deserialize, Serialize};
 
-use crate::CalcError;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, constants, validate};
 
-/// Permeability of free space (H/m).
-const MU_0: f64 = 4.0 * std::f64::consts::PI * 1e-7;
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Mohan et al. 1999 planar spiral inductance (modified Wheeler / current sheet)",
+    status: ModelStatus::Validated,
+    reference: "Mohan, Hershenson, Boyd & Lee, IEEE JSSC 34(10) 1999, eq. 2–3, Tables I–II",
+    validity: "Fill ratio ρ ≳ 0.1, s ≤ 3w; ±3% typical vs. field solver; free-space DC inductance, no nearby ground plane",
+};
 
 /// Mils to meters conversion factor.
-const MILS_TO_METERS: f64 = 25.4e-6;
+const MILS_TO_METERS: f64 = constants::MIL_TO_M;
 
 /// Spiral geometry shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,18 +37,6 @@ pub enum SpiralShape {
     Hexagonal,
     Octagonal,
     Circle,
-}
-
-impl SpiralShape {
-    /// Mohan coefficients (K1, K2) for each geometry.
-    fn coefficients(self) -> (f64, f64) {
-        match self {
-            Self::Square => (2.34, 2.75),
-            Self::Hexagonal => (2.33, 3.82),
-            Self::Octagonal => (2.25, 3.55),
-            Self::Circle => (2.23, 3.45),
-        }
-    }
 }
 
 /// Result of a planar spiral inductor calculation.
@@ -49,7 +52,7 @@ pub struct InductorResult {
     pub inductance_nh: f64,
 }
 
-/// Calculate planar spiral inductor using the modified Wheeler / Mohan formula.
+/// Calculate the inductance of a planar spiral.
 ///
 /// # Arguments
 /// - `n_turns` — number of turns (must be ≥ 1)
@@ -58,11 +61,11 @@ pub struct InductorResult {
 /// - `dout_mils` — outer diameter in mils (must be > 0)
 /// - `shape` — spiral geometry
 ///
-/// The inner diameter is derived as:
-/// `din = dout − 2×n×(w+s) + 2×s`
+/// The inner diameter is derived as `din = dout − 2·n·(w + s) + 2·s`.
 ///
 /// # Errors
-/// Returns [`CalcError::OutOfRange`] or [`CalcError::NegativeDimension`] if inputs are invalid.
+/// Returns an error for invalid inputs or a geometry whose inner diameter
+/// would not be positive.
 pub fn planar_spiral(
     n_turns: u32,
     width_mils: f64,
@@ -73,32 +76,16 @@ pub fn planar_spiral(
     if n_turns == 0 {
         return Err(CalcError::OutOfRange {
             name: "n_turns",
-            value: n_turns as f64,
+            value: 0.0,
             expected: ">= 1",
         });
     }
-    if width_mils <= 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "width_mils",
-            value: width_mils,
-        });
-    }
-    if spacing_mils <= 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "spacing_mils",
-            value: spacing_mils,
-        });
-    }
-    if dout_mils <= 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "dout_mils",
-            value: dout_mils,
-        });
-    }
+    validate::positive("width_mils", width_mils)?;
+    validate::positive("spacing_mils", spacing_mils)?;
+    validate::positive("dout_mils", dout_mils)?;
 
-    let n = n_turns as f64;
+    let n = f64::from(n_turns);
     let din_mils = dout_mils - 2.0 * n * (width_mils + spacing_mils) + 2.0 * spacing_mils;
-
     if din_mils <= 0.0 {
         return Err(CalcError::OutOfRange {
             name: "din_mils (derived)",
@@ -111,16 +98,29 @@ pub fn planar_spiral(
     let d_avg_mils = (dout_mils + din_mils) / 2.0;
     let d_avg_m = d_avg_mils * MILS_TO_METERS;
 
-    let (k1, k2) = shape.coefficients();
-    let inductance_h = k1 * MU_0 * n * n * d_avg_m / (1.0 + k2 * rho);
-    let inductance_nh = inductance_h * 1e9;
+    let inductance_h = match shape {
+        // Modified Wheeler (eq. 2): L = K1·μ0·n²·d_avg / (1 + K2·ρ), Table I.
+        SpiralShape::Square => wheeler(2.34, 2.75, n, d_avg_m, rho),
+        SpiralShape::Hexagonal => wheeler(2.33, 3.82, n, d_avg_m, rho),
+        SpiralShape::Octagonal => wheeler(2.25, 3.55, n, d_avg_m, rho),
+        // Current sheet (eq. 3): L = μ0·n²·d_avg·c1/2·[ln(c2/ρ) + c3·ρ + c4·ρ²], Table II circle.
+        SpiralShape::Circle => {
+            let (c1, c2, c3, c4) = (1.00, 2.46, 0.00, 0.20);
+            constants::MU_0 * n * n * d_avg_m * c1 / 2.0
+                * ((c2 / rho).ln() + c3 * rho + c4 * rho * rho)
+        }
+    };
 
     Ok(InductorResult {
         din_mils,
         rho,
         d_avg_mils,
-        inductance_nh,
+        inductance_nh: validate::finite_result("inductance_nh", inductance_h * 1e9)?,
     })
+}
+
+fn wheeler(k1: f64, k2: f64, n: f64, d_avg_m: f64, rho: f64) -> f64 {
+    k1 * constants::MU_0 * n * n * d_avg_m / (1.0 + k2 * rho)
 }
 
 #[cfg(test)]
@@ -140,25 +140,37 @@ mod tests {
     }
 
     #[test]
-    fn derived_din_matches_spec() {
-        // din = 350 - 2×5×(10+10) + 2×10 = 350 - 200 + 20 = 170
-        let result = planar_spiral(5, 10.0, 10.0, 350.0, SpiralShape::Square).unwrap();
-        assert_relative_eq!(result.din_mils, 170.0, epsilon = 1e-10);
+    fn circle_uses_current_sheet_table_ii() {
+        // n=5, d_avg=260 mil = 6.604 mm, ρ=0.34615:
+        // L = μ0·25·6.604e-3·0.5·[ln(2.46/0.34615) + 0.2·0.34615²] = 208.6 nH
+        let r = planar_spiral(5, 10.0, 10.0, 350.0, SpiralShape::Circle).unwrap();
+        let expected = constants::MU_0
+            * 25.0
+            * 6.604e-3
+            * 0.5
+            * ((2.46_f64 / 0.346_153_846).ln() + 0.2 * 0.346_153_846_f64.powi(2))
+            * 1e9;
+        assert_relative_eq!(r.inductance_nh, expected, max_relative = 1e-6);
+        // A circle encloses less area than a square of the same diameter: lower L.
+        let sq = planar_spiral(5, 10.0, 10.0, 350.0, SpiralShape::Square).unwrap();
+        assert!(r.inductance_nh < sq.inductance_nh);
     }
 
     #[test]
-    fn error_on_zero_turns() {
+    fn shapes_are_ordered_by_enclosed_area() {
+        let l = |s| {
+            planar_spiral(3, 10.0, 10.0, 200.0, s)
+                .unwrap()
+                .inductance_nh
+        };
+        assert!(l(SpiralShape::Square) > l(SpiralShape::Octagonal));
+        assert!(l(SpiralShape::Octagonal) > l(SpiralShape::Circle));
+    }
+
+    #[test]
+    fn errors() {
         assert!(planar_spiral(0, 10.0, 10.0, 350.0, SpiralShape::Square).is_err());
-    }
-
-    #[test]
-    fn error_on_din_negative() {
-        // Very large n will make din negative
         assert!(planar_spiral(50, 10.0, 10.0, 350.0, SpiralShape::Square).is_err());
-    }
-
-    #[test]
-    fn hexagonal_shape_accepted() {
-        assert!(planar_spiral(3, 10.0, 10.0, 200.0, SpiralShape::Hexagonal).is_ok());
+        assert!(planar_spiral(5, f64::NAN, 10.0, 350.0, SpiralShape::Square).is_err());
     }
 }

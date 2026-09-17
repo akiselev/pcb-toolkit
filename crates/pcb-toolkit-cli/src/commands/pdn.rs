@@ -2,9 +2,11 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 use pcb_toolkit::pdn::{self, PdnInput};
+use pcb_toolkit::units::{Freq, Length};
 
 use crate::output;
 
+/// PDN target impedance and plane capacitance (first-order budget).
 #[derive(Args)]
 pub struct PdnArgs {
     /// Supply voltage (V).
@@ -23,21 +25,21 @@ pub struct PdnArgs {
     #[arg(long)]
     v_ripple: f64,
 
-    /// Plane area (square inches).
-    #[arg(long)]
-    area: f64,
+    /// Plane area in square inches.
+    #[arg(long = "area-sq-in")]
+    area_sq_in: f64,
 
     /// Dielectric relative permittivity.
     #[arg(long)]
     er: f64,
 
-    /// Dielectric thickness (mils).
+    /// Dielectric thickness between the planes [mil, mm, in, um]. Default unit: mil.
     #[arg(long)]
-    distance: f64,
+    distance: Length,
 
-    /// Frequency (MHz). Default: 0.
+    /// Frequency for the plane reactance [Hz, kHz, MHz, GHz]. Default: 0 (DC, no reactance).
     #[arg(long, default_value = "0")]
-    freq: f64,
+    freq: Freq,
 }
 
 pub fn run(args: &PdnArgs, json: bool) -> Result<()> {
@@ -46,10 +48,10 @@ pub fn run(args: &PdnArgs, json: bool) -> Result<()> {
         i_max: args.current,
         i_step_pct: args.i_step,
         v_ripple_pct: args.v_ripple,
-        area_sq_in: args.area,
+        area_sq_in: args.area_sq_in,
         er: args.er,
-        d_mils: args.distance,
-        freq_mhz: args.freq,
+        d_mils: args.distance.mils(),
+        freq_mhz: args.freq.hz() / 1e6,
     })
     .context("PDN impedance calculation failed")?;
 
@@ -63,6 +65,7 @@ pub fn run(args: &PdnArgs, json: bool) -> Result<()> {
         if let Some(xc) = result.xc_ohms {
             println!("  Xc         = {:.6} Ω", xc);
         }
+        output::print_model(&pdn::MODEL);
     }
     Ok(())
 }

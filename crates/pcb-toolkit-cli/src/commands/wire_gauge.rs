@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Args;
 
 use pcb_toolkit::wire_gauge::{self, Awg};
@@ -14,18 +14,18 @@ pub struct WireGaugeArgs {
 fn parse_awg(s: &str) -> Result<Awg> {
     match s.to_lowercase().trim_start_matches("awg").trim() {
         "4/0" | "0000" => Ok(Awg::Awg4_0),
-        "3/0" | "000"  => Ok(Awg::Awg3_0),
-        "2/0" | "00"   => Ok(Awg::Awg2_0),
-        "1/0" | "0"    => Ok(Awg::Awg1_0),
-        "1"  => Ok(Awg::Awg1),
-        "2"  => Ok(Awg::Awg2),
-        "3"  => Ok(Awg::Awg3),
-        "4"  => Ok(Awg::Awg4),
-        "5"  => Ok(Awg::Awg5),
-        "6"  => Ok(Awg::Awg6),
-        "7"  => Ok(Awg::Awg7),
-        "8"  => Ok(Awg::Awg8),
-        "9"  => Ok(Awg::Awg9),
+        "3/0" | "000" => Ok(Awg::Awg3_0),
+        "2/0" | "00" => Ok(Awg::Awg2_0),
+        "1/0" | "0" => Ok(Awg::Awg1_0),
+        "1" => Ok(Awg::Awg1),
+        "2" => Ok(Awg::Awg2),
+        "3" => Ok(Awg::Awg3),
+        "4" => Ok(Awg::Awg4),
+        "5" => Ok(Awg::Awg5),
+        "6" => Ok(Awg::Awg6),
+        "7" => Ok(Awg::Awg7),
+        "8" => Ok(Awg::Awg8),
+        "9" => Ok(Awg::Awg9),
         "10" => Ok(Awg::Awg10),
         "11" => Ok(Awg::Awg11),
         "12" => Ok(Awg::Awg12),
@@ -76,9 +76,15 @@ pub fn run(args: &WireGaugeArgs, json: bool) -> Result<()> {
         println!("  AWG          = {}", result.awg_label);
         println!("  Diameter     = {:.4} in", result.diameter_in);
         println!("  Diameter     = {:.4} mil", result.diameter_mils);
-        println!("  Resistance   = {:.4} Ω/kft", result.resistance_ohm_per_kft);
+        println!(
+            "  Resistance   = {:.4} Ω/kft",
+            result.resistance_ohm_per_kft
+        );
         println!("  Area         = {:.4} cmil", result.area_circular_mils);
-        println!("  Area(Saturn) = {:.4}", result.area_saturn);
+        println!(
+            "  cmil/700     = {:.4}  (Saturn display value, no physical unit)",
+            result.area_saturn_display
+        );
     }
     Ok(())
 }

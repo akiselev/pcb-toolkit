@@ -1,15 +1,29 @@
-//! Edge-coupled embedded (buried) differential pair impedance calculator.
+//! Edge-coupled embedded (buried microstrip) differential pair.
 //!
-//! An embedded differential pair is a surface microstrip pair covered by a
-//! dielectric overlay. The burial correction is applied to the single-ended
-//! base impedance first, then the coupling model is applied identically to
-//! the external edge-coupled case.
+//! The single-ended base is the same IPC-2141A surface expression used by
+//! [`super::edge_coupled_external`], so a zero cover reproduces the external
+//! result exactly. The cover is applied with the embedded-microstrip filling
+//! model from [`crate::impedance::embedded`]: the effective permittivity moves
+//! from the surface value towards εr as `1 − exp(−2·cover/H)` and the
+//! impedance scales by `√(εeff,surface/εeff,embedded)`. The IPC-2141A
+//! coupling factor is then applied to the buried single-ended impedance.
 
-use crate::CalcError;
-use crate::impedance::embedded::{self, EmbeddedMicrostripInput};
-use super::types::{DifferentialResult, kb_terminated};
+use super::edge_coupled_external::{ipc2141_odd_factor, ipc2141_zo};
+use super::types::{self, DifferentialResult};
+use crate::impedance::{common, embedded};
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "IPC-2141A surface pair with exponential cover filling (embedded microstrip)",
+    status: ModelStatus::Compatibility,
+    reference: "IPC-2141A; Wadell 1991 §3.5.4 cover model",
+    validity: "Same range as the external pair; cover of the same εr as the substrate; reduces exactly to the external pair at zero cover",
+};
 
 /// Inputs for edge-coupled embedded (buried) differential pair.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgeCoupledEmbeddedInput {
     /// Conductor width (mils).
     pub width: f64,
@@ -19,74 +33,40 @@ pub struct EdgeCoupledEmbeddedInput {
     pub height: f64,
     /// Conductor thickness (mils).
     pub thickness: f64,
-    /// Substrate relative permittivity.
+    /// Substrate (and cover) relative permittivity.
     pub er: f64,
-    /// Cover height — dielectric above the trace (mils).
-    /// When 0, result equals the surface (external) edge-coupled result.
+    /// Cover height — dielectric above the trace (mils). 0 = external pair.
     pub cover_height: f64,
 }
 
 /// Compute differential impedance for an edge-coupled embedded (buried) pair.
 pub fn calculate(input: &EdgeCoupledEmbeddedInput) -> Result<DifferentialResult, CalcError> {
-    let EdgeCoupledEmbeddedInput { width, spacing, height, thickness, er, cover_height } = *input;
-
-    if width <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "width", value: width });
-    }
-    if spacing <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "spacing", value: spacing });
-    }
-    if height <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "height", value: height });
-    }
-    if thickness <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "thickness", value: thickness });
-    }
-    if cover_height < 0.0 {
-        return Err(CalcError::NegativeDimension { name: "cover_height", value: cover_height });
-    }
-    if er < 1.0 {
-        return Err(CalcError::OutOfRange {
-            name: "er",
-            value: er,
-            expected: ">= 1.0",
-        });
-    }
-
-    let base = embedded::calculate(&EmbeddedMicrostripInput {
+    let EdgeCoupledEmbeddedInput {
         width,
+        spacing,
         height,
         thickness,
         er,
         cover_height,
-        frequency: 0.0,
-    })?;
+    } = *input;
+    validate::positive("spacing", spacing)?;
+    validate::non_negative("cover_height", cover_height)?;
 
-    let z0 = base.zo;
+    let zo_surface = ipc2141_zo(width, height, thickness, er)?;
+    // Surface effective permittivity (H-J) is only used for the filling ratio.
+    let er_eff_surface = common::hj_er_eff(width / height, er);
+    let er_eff = embedded::er_eff_embedded(er, er_eff_surface, cover_height, height);
+    let zo = embedded::zo_embedded(zo_surface, er_eff_surface, er_eff);
 
-    let zodd = z0 * (1.0 - 0.48 * (-0.96 * spacing / height).exp());
-    let zeven = z0 * z0 / zodd;
-    let zdiff = 2.0 * zodd;
-    let kb = (zeven - zodd) / (zeven + zodd);
-    let kb_db = 20.0 * kb.log10();
-    let kb_term = kb_terminated(kb);
-    let kb_term_db = 20.0 * kb_term.log10();
-
-    Ok(DifferentialResult {
-        zdiff,
-        zo: z0,
-        zodd,
-        zeven,
-        kb,
-        kb_db,
-        kb_term,
-        kb_term_db,
-    })
+    let zodd = zo * ipc2141_odd_factor(spacing, height);
+    let zeven = zo * zo / zodd;
+    types::build(zo, zodd, zeven)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::differential::edge_coupled_external::{self, EdgeCoupledExternalInput};
     use approx::assert_relative_eq;
 
     fn input(
@@ -97,56 +77,70 @@ mod tests {
         er: f64,
         cover_height: f64,
     ) -> EdgeCoupledEmbeddedInput {
-        EdgeCoupledEmbeddedInput { width, spacing, height, thickness, er, cover_height }
+        EdgeCoupledEmbeddedInput {
+            width,
+            spacing,
+            height,
+            thickness,
+            er,
+            cover_height,
+        }
     }
 
-    /// With cover_height=0, embedded base Z0 equals the Hammerstad-Jensen surface
-    /// microstrip Z0 (~75.80 Ω). The external edge-coupled calculator uses the IPC-2141
-    /// approximation formula instead (~77.50 Ω), so the two paths diverge slightly.
-    /// At cover=0 with W=10, S=5, H=15, T=2.10, Er=4.6 the Zdiff is ~95.76.
+    /// The boundary relationship is tested against the actual external calculator.
     #[test]
     fn zero_cover_matches_external() {
-        let result = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 0.0)).unwrap();
-        assert_relative_eq!(result.zdiff, 95.76, max_relative = 0.005);
+        let embedded = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 0.0)).unwrap();
+        let external = edge_coupled_external::calculate(&EdgeCoupledExternalInput {
+            width: 10.0,
+            spacing: 5.0,
+            height: 15.0,
+            thickness: 2.10,
+            er: 4.6,
+        })
+        .unwrap();
+        assert_relative_eq!(embedded.zdiff, external.zdiff, max_relative = 1e-12);
+        assert_relative_eq!(embedded.zo, external.zo, max_relative = 1e-12);
+        assert_relative_eq!(embedded.kb, external.kb, max_relative = 1e-12);
     }
 
-    /// Deeper burial reduces the single-ended Z0 through the exp correction factor.
     #[test]
-    fn deeper_burial_reduces_z0() {
-        let surface = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 0.0)).unwrap();
-        let buried = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 5.0)).unwrap();
-
-        assert!(
-            buried.zo < surface.zo,
-            "buried Zo {:.3} should be less than surface Zo {:.3}",
-            buried.zo,
-            surface.zo
-        );
+    fn continuous_at_zero_cover() {
+        let a = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 0.0)).unwrap();
+        let b = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 1e-6)).unwrap();
+        assert_relative_eq!(a.zdiff, b.zdiff, max_relative = 1e-5);
     }
 
-    /// Wider spacing reduces coupling magnitude.
+    #[test]
+    fn deeper_burial_reduces_z0_monotonically() {
+        let mut prev = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 0.0))
+            .unwrap()
+            .zo;
+        for c in [0.5, 2.0, 5.0, 20.0] {
+            let z = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, c)).unwrap().zo;
+            assert!(z < prev, "cover {c}");
+            prev = z;
+        }
+    }
+
+    #[test]
+    fn air_cover_on_air_pair_changes_nothing() {
+        let a = calculate(&input(10.0, 5.0, 15.0, 2.10, 1.0, 0.0)).unwrap();
+        let b = calculate(&input(10.0, 5.0, 15.0, 2.10, 1.0, 5.0)).unwrap();
+        assert_relative_eq!(a.zdiff, b.zdiff, max_relative = 1e-12);
+    }
+
     #[test]
     fn wider_spacing_reduces_coupling() {
         let close = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, 3.0)).unwrap();
         let far = calculate(&input(10.0, 20.0, 15.0, 2.10, 4.6, 3.0)).unwrap();
-
-        assert!(
-            far.kb.abs() < close.kb.abs(),
-            "wider spacing Kb {:.4} should be smaller than {:.4}",
-            far.kb,
-            close.kb
-        );
+        assert!(far.kb < close.kb);
     }
 
     #[test]
-    fn rejects_negative_width() {
-        let result = calculate(&input(-1.0, 5.0, 15.0, 2.10, 4.6, 0.0));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_negative_cover_height() {
-        let result = calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, -1.0));
-        assert!(result.is_err());
+    fn rejects_invalid_inputs() {
+        assert!(calculate(&input(-1.0, 5.0, 15.0, 2.10, 4.6, 0.0)).is_err());
+        assert!(calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, -1.0)).is_err());
+        assert!(calculate(&input(10.0, 5.0, 15.0, 2.10, 4.6, f64::NAN)).is_err());
     }
 }

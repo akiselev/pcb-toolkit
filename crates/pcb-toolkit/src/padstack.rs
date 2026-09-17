@@ -1,17 +1,24 @@
-//! Padstack calculator — pad sizing for TH, BGA, and routing.
+//! Padstack geometry calculator.
 //!
-//! 7 sub-calculators:
-//! 1. Thru-Hole Pad
-//! 2. BGA Land Size (IPC-7351A)
-//! 3. Conductor/Pad TH
-//! 4. Conductor/Pad BGA
-//! 5. 2 Conductors/Pad TH
-//! 6. 2 Conductors/Pad BGA
-//! 7. Corner to Corner
+//! Implemented sub-calculators:
+//! 1. Thru-hole pad sizing (pad and anti-pad from hole, annular ring, isolation)
+//! 2. Corner-to-corner (diagonal) distance
+//!
+//! Saturn's BGA land size and conductor/pad routing sub-calculators are not
+//! implemented.
 
 use serde::{Deserialize, Serialize};
 
-use crate::CalcError;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Padstack geometry (thru-hole pad sizing, diagonal distance)",
+    status: ModelStatus::Validated,
+    reference: "Exact geometry; Saturn PCB Toolkit help p.23",
+    validity: "Exact; BGA land and routing sub-calculators are not implemented",
+};
 
 /// Input parameters for the thru-hole pad calculator.
 ///
@@ -53,35 +60,21 @@ pub struct ThruHoleResult {
 /// # Errors
 /// Returns [`CalcError::NegativeDimension`] for non-positive dimensions.
 pub fn thru_hole(input: &ThruHoleInput) -> Result<ThruHoleResult, CalcError> {
-    if input.hole_diameter_mils <= 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "hole_diameter_mils",
-            value: input.hole_diameter_mils,
-        });
-    }
-    if input.annular_ring_mils < 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "annular_ring_mils",
-            value: input.annular_ring_mils,
-        });
-    }
-    if input.isolation_width_mils < 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "isolation_width_mils",
-            value: input.isolation_width_mils,
-        });
-    }
+    validate::positive("hole_diameter_mils", input.hole_diameter_mils)?;
+    validate::non_negative("annular_ring_mils", input.annular_ring_mils)?;
+    validate::non_negative("isolation_width_mils", input.isolation_width_mils)?;
 
-    let pad_external_mils =
-        input.hole_diameter_mils + 2.0 * input.annular_ring_mils;
+    let pad_external_mils = input.hole_diameter_mils + 2.0 * input.annular_ring_mils;
     let pad_internal_signal_mils = pad_external_mils;
-    let pad_internal_plane_mils =
-        pad_external_mils + 2.0 * input.isolation_width_mils;
+    let pad_internal_plane_mils = pad_external_mils + 2.0 * input.isolation_width_mils;
 
     Ok(ThruHoleResult {
-        pad_external_mils,
+        pad_external_mils: validate::finite_result("pad_external_mils", pad_external_mils)?,
         pad_internal_signal_mils,
-        pad_internal_plane_mils,
+        pad_internal_plane_mils: validate::finite_result(
+            "pad_internal_plane_mils",
+            pad_internal_plane_mils,
+        )?,
     })
 }
 
@@ -96,20 +89,9 @@ pub fn thru_hole(input: &ThruHoleInput) -> Result<ThruHoleResult, CalcError> {
 /// # Errors
 /// Returns [`CalcError::NegativeDimension`] if either dimension is negative.
 pub fn corner_to_corner(a_mils: f64, b_mils: f64) -> Result<f64, CalcError> {
-    if a_mils < 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "a_mils",
-            value: a_mils,
-        });
-    }
-    if b_mils < 0.0 {
-        return Err(CalcError::NegativeDimension {
-            name: "b_mils",
-            value: b_mils,
-        });
-    }
-
-    Ok((a_mils * a_mils + b_mils * b_mils).sqrt())
+    validate::non_negative("a_mils", a_mils)?;
+    validate::non_negative("b_mils", b_mils)?;
+    validate::finite_result("distance", a_mils.hypot(b_mils))
 }
 
 #[cfg(test)]
@@ -173,5 +155,13 @@ mod tests {
     fn error_on_negative_corner_dimension() {
         assert!(corner_to_corner(-1.0, 4.0).is_err());
         assert!(corner_to_corner(3.0, -1.0).is_err());
+        assert!(corner_to_corner(f64::NAN, 1.0).is_err());
+    }
+
+    #[test]
+    fn hypot_does_not_overflow_intermediate() {
+        let d = corner_to_corner(1e200, 1e200).unwrap();
+        assert!(d.is_finite());
+        assert_relative_eq!(d, 1e200 * std::f64::consts::SQRT_2, max_relative = 1e-12);
     }
 }

@@ -6,7 +6,16 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::CalcError;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Ideal reactance and LC resonance",
+    status: ModelStatus::Validated,
+    reference: "Xc = 1/(2πfC), Xl = 2πfL, f₀ = 1/(2π√LC)",
+    validity: "Exact for ideal elements; f > 0, C > 0, L > 0",
+};
 
 /// Result of a reactance calculation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -27,38 +36,25 @@ pub struct ReactanceResult {
 /// - `inductance_h` — inductance in Henries (None to skip Xl and f_res)
 ///
 /// # Errors
-/// Returns [`CalcError::OutOfRange`] if `freq_hz` ≤ 0 or either value is ≤ 0.
+/// Returns [`CalcError::InsufficientInputs`] if neither C nor L is given, and
+/// [`CalcError::OutOfRange`] / [`CalcError::NotFinite`] if `freq_hz` ≤ 0 or
+/// either value is ≤ 0 or non-finite.
 pub fn reactance(
     freq_hz: f64,
     capacitance_f: Option<f64>,
     inductance_h: Option<f64>,
 ) -> Result<ReactanceResult, CalcError> {
-    if freq_hz <= 0.0 {
-        return Err(CalcError::OutOfRange {
-            name: "freq_hz",
-            value: freq_hz,
-            expected: "> 0",
-        });
+    validate::positive_quantity("freq_hz", freq_hz)?;
+    if capacitance_f.is_none() && inductance_h.is_none() {
+        return Err(CalcError::InsufficientInputs(
+            "at least one of capacitance_f, inductance_h is required",
+        ));
     }
-
     if let Some(c) = capacitance_f {
-        if c <= 0.0 {
-            return Err(CalcError::OutOfRange {
-                name: "capacitance_f",
-                value: c,
-                expected: "> 0",
-            });
-        }
+        validate::positive_quantity("capacitance_f", c)?;
     }
-
     if let Some(l) = inductance_h {
-        if l <= 0.0 {
-            return Err(CalcError::OutOfRange {
-                name: "inductance_h",
-                value: l,
-                expected: "> 0",
-            });
-        }
+        validate::positive_quantity("inductance_h", l)?;
     }
 
     let two_pi_f = 2.0 * std::f64::consts::PI * freq_hz;
@@ -71,6 +67,15 @@ pub fn reactance(
         _ => None,
     };
 
+    for (name, v) in [
+        ("xc_ohms", xc_ohms),
+        ("xl_ohms", xl_ohms),
+        ("f_res_hz", f_res_hz),
+    ] {
+        if let Some(v) = v {
+            validate::finite_result(name, v)?;
+        }
+    }
     Ok(ReactanceResult {
         xc_ohms,
         xl_ohms,
@@ -116,5 +121,12 @@ mod tests {
     #[test]
     fn error_on_negative_capacitance() {
         assert!(reactance(1e6, Some(-1e-6), None).is_err());
+    }
+
+    #[test]
+    fn error_on_no_components_or_nonfinite() {
+        assert!(reactance(1e6, None, None).is_err());
+        assert!(reactance(f64::NAN, Some(1e-6), None).is_err());
+        assert!(reactance(1e6, Some(f64::INFINITY), None).is_err());
     }
 }

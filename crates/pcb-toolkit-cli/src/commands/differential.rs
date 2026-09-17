@@ -7,6 +7,7 @@ use pcb_toolkit::differential::edge_coupled_external::{self, EdgeCoupledExternal
 use pcb_toolkit::differential::edge_coupled_internal_asym::{self, EdgeCoupledInternalAsymInput};
 use pcb_toolkit::differential::edge_coupled_internal_sym::{self, EdgeCoupledInternalSymInput};
 use pcb_toolkit::differential::types::DifferentialResult;
+use pcb_toolkit::model::ModelInfo;
 use pcb_toolkit::units::Length;
 
 use crate::output;
@@ -19,10 +20,11 @@ pub struct DifferentialArgs {
 
 #[derive(Subcommand)]
 pub enum DifferentialTopology {
-    /// Edge-coupled external (surface microstrip) differential pair.
+    /// Edge-coupled external (surface microstrip) pair. IPC-2141A / Saturn-compatible.
     EdgeCoupledExternal {
         #[arg(short, long)]
         width: Length,
+        /// Edge-to-edge gap between the traces [mil, mm, in, um].
         #[arg(short, long)]
         spacing: Length,
         #[arg(long)]
@@ -32,12 +34,13 @@ pub enum DifferentialTopology {
         #[arg(long, default_value = "4.6")]
         er: f64,
     },
-    /// Edge-coupled internal symmetric (centered stripline) differential pair.
+    /// Edge-coupled internal symmetric (centered stripline) pair. Cohn 1955.
     EdgeCoupledInternalSym {
         #[arg(short, long)]
         width: Length,
         #[arg(short, long)]
         spacing: Length,
+        /// Gap from each face of the trace to its ground plane [mil, mm, in, um].
         #[arg(long)]
         height: Length,
         #[arg(short, long, default_value = "1.4mil")]
@@ -45,14 +48,16 @@ pub enum DifferentialTopology {
         #[arg(long, default_value = "4.6")]
         er: f64,
     },
-    /// Edge-coupled internal asymmetric (offset stripline) differential pair.
+    /// Edge-coupled internal asymmetric (offset stripline) pair.
     EdgeCoupledInternalAsym {
         #[arg(short, long)]
         width: Length,
         #[arg(short, long)]
         spacing: Length,
+        /// Gap from the trace face to the top ground plane [mil, mm, in, um].
         #[arg(long)]
         height1: Length,
+        /// Gap from the trace face to the bottom ground plane [mil, mm, in, um].
         #[arg(long)]
         height2: Length,
         #[arg(short, long, default_value = "1.4mil")]
@@ -60,7 +65,7 @@ pub enum DifferentialTopology {
         #[arg(long, default_value = "4.6")]
         er: f64,
     },
-    /// Edge-coupled embedded (buried microstrip) differential pair.
+    /// Edge-coupled embedded (buried microstrip) pair.
     EdgeCoupledEmbedded {
         #[arg(short, long)]
         width: Length,
@@ -75,37 +80,61 @@ pub enum DifferentialTopology {
         #[arg(long)]
         cover_height: Length,
     },
-    /// Broadside-coupled differential pair.
+    /// Broadside-coupled (vertically stacked) pair between two ground planes.
     BroadsideCoupled {
         #[arg(short, long)]
         width: Length,
+        /// Dielectric gap between the facing surfaces of the two strips [mil, mm, in, um].
         #[arg(long)]
         separation: Length,
+        /// Ground-to-ground spacing [mil, mm, in, um].
         #[arg(long)]
         height_total: Length,
         #[arg(short, long, default_value = "1.4mil")]
         thickness: Length,
         #[arg(long, default_value = "4.6")]
         er: f64,
+        /// Shielded (between two ground planes). Required: the unshielded
+        /// configuration has no implemented model and is rejected.
         #[arg(long)]
         shielded: bool,
     },
 }
 
-fn print_diff_result(result: &DifferentialResult) {
-    println!("  Zdiff    = {:.4} Ω", result.zdiff);
-    println!("  Zo       = {:.4} Ω", result.zo);
-    println!("  Zodd     = {:.4} Ω", result.zodd);
-    println!("  Zeven    = {:.4} Ω", result.zeven);
-    println!("  Kb       = {:.6}", result.kb);
-    println!("  Kb       = {:.4} dB", result.kb_db);
-    println!("  Kb_term  = {:.6}", result.kb_term);
-    println!("  Kb_term  = {:.4} dB", result.kb_term_db);
+fn print(title: &str, result: &DifferentialResult, model: &ModelInfo, json: bool) -> Result<()> {
+    if json {
+        output::print_result(result, true)?;
+    } else {
+        println!("{title}");
+        println!("{}", "─".repeat(title.chars().count()));
+        println!("  Zdiff    = {:.4} Ω", result.zdiff);
+        println!("  Zo       = {:.4} Ω", result.zo);
+        println!("  Zodd     = {:.4} Ω", result.zodd);
+        println!("  Zeven    = {:.4} Ω", result.zeven);
+        println!("  Kb       = {:.6}", result.kb);
+        match result.kb_db {
+            Some(db) => println!("  Kb       = {db:.4} dB"),
+            None => println!("  Kb       = -inf dB (no coupling)"),
+        }
+        println!("  Kb_term  = {:.6}", result.kb_term);
+        match result.kb_term_db {
+            Some(db) => println!("  Kb_term  = {db:.4} dB"),
+            None => println!("  Kb_term  = -inf dB (no coupling)"),
+        }
+        output::print_model(model);
+    }
+    Ok(())
 }
 
 pub fn run(args: &DifferentialArgs, json: bool) -> Result<()> {
     match &args.topology {
-        DifferentialTopology::EdgeCoupledExternal { width, spacing, height, thickness, er } => {
+        DifferentialTopology::EdgeCoupledExternal {
+            width,
+            spacing,
+            height,
+            thickness,
+            er,
+        } => {
             let result = edge_coupled_external::calculate(&EdgeCoupledExternalInput {
                 width: width.mils(),
                 spacing: spacing.mils(),
@@ -114,17 +143,20 @@ pub fn run(args: &DifferentialArgs, json: bool) -> Result<()> {
                 er: *er,
             })
             .context("edge-coupled external calculation failed")?;
-
-            if json {
-                output::print_result(&result, true)?;
-            } else {
-                println!("Edge-Coupled External Differential");
-                println!("───────────────────────────────────");
-                print_diff_result(&result);
-            }
-            Ok(())
+            print(
+                "Edge-Coupled External Differential",
+                &result,
+                &edge_coupled_external::MODEL,
+                json,
+            )
         }
-        DifferentialTopology::EdgeCoupledInternalSym { width, spacing, height, thickness, er } => {
+        DifferentialTopology::EdgeCoupledInternalSym {
+            width,
+            spacing,
+            height,
+            thickness,
+            er,
+        } => {
             let result = edge_coupled_internal_sym::calculate(&EdgeCoupledInternalSymInput {
                 width: width.mils(),
                 spacing: spacing.mils(),
@@ -133,15 +165,12 @@ pub fn run(args: &DifferentialArgs, json: bool) -> Result<()> {
                 er: *er,
             })
             .context("edge-coupled internal symmetric calculation failed")?;
-
-            if json {
-                output::print_result(&result, true)?;
-            } else {
-                println!("Edge-Coupled Internal Symmetric Differential");
-                println!("─────────────────────────────────────────────");
-                print_diff_result(&result);
-            }
-            Ok(())
+            print(
+                "Edge-Coupled Internal Symmetric Differential",
+                &result,
+                &edge_coupled_internal_sym::MODEL,
+                json,
+            )
         }
         DifferentialTopology::EdgeCoupledInternalAsym {
             width,
@@ -160,15 +189,12 @@ pub fn run(args: &DifferentialArgs, json: bool) -> Result<()> {
                 er: *er,
             })
             .context("edge-coupled internal asymmetric calculation failed")?;
-
-            if json {
-                output::print_result(&result, true)?;
-            } else {
-                println!("Edge-Coupled Internal Asymmetric Differential");
-                println!("──────────────────────────────────────────────");
-                print_diff_result(&result);
-            }
-            Ok(())
+            print(
+                "Edge-Coupled Internal Asymmetric Differential",
+                &result,
+                &edge_coupled_internal_asym::MODEL,
+                json,
+            )
         }
         DifferentialTopology::EdgeCoupledEmbedded {
             width,
@@ -187,15 +213,12 @@ pub fn run(args: &DifferentialArgs, json: bool) -> Result<()> {
                 cover_height: cover_height.mils(),
             })
             .context("edge-coupled embedded calculation failed")?;
-
-            if json {
-                output::print_result(&result, true)?;
-            } else {
-                println!("Edge-Coupled Embedded Differential");
-                println!("───────────────────────────────────");
-                print_diff_result(&result);
-            }
-            Ok(())
+            print(
+                "Edge-Coupled Embedded Differential",
+                &result,
+                &edge_coupled_embedded::MODEL,
+                json,
+            )
         }
         DifferentialTopology::BroadsideCoupled {
             width,
@@ -214,15 +237,12 @@ pub fn run(args: &DifferentialArgs, json: bool) -> Result<()> {
                 shielded: *shielded,
             })
             .context("broadside-coupled calculation failed")?;
-
-            if json {
-                output::print_result(&result, true)?;
-            } else {
-                println!("Broadside-Coupled Differential");
-                println!("──────────────────────────────");
-                print_diff_result(&result);
-            }
-            Ok(())
+            print(
+                "Broadside-Coupled Differential",
+                &result,
+                &broadside_coupled::MODEL,
+                json,
+            )
         }
     }
 }

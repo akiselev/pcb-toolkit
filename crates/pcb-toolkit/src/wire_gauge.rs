@@ -68,8 +68,10 @@ pub struct WireGaugeResult {
     pub resistance_ohm_per_kft: f64,
     /// Cross-sectional area in circular mils (diameter_mils²).
     pub area_circular_mils: f64,
-    /// Saturn display area: diameter_mils² / 700.0.
-    pub area_saturn: f64,
+    /// Saturn's "area" display value, `area_circular_mils / 700`. This has
+    /// no physical unit or meaning that could be identified; it is kept only
+    /// so output can be compared with the Saturn window.
+    pub area_saturn_display: f64,
 }
 
 /// Static table entry: (label, diameter_in, resistance_ohm_per_kft).
@@ -80,64 +82,273 @@ struct Entry {
 }
 
 static TABLE: [Entry; 44] = [
-    Entry { label: "4/0",  diameter_in: 0.4600, resistance_ohm_per_kft: 0.050 },
-    Entry { label: "3/0",  diameter_in: 0.4096, resistance_ohm_per_kft: 0.060 },
-    Entry { label: "2/0",  diameter_in: 0.3648, resistance_ohm_per_kft: 0.080 },
-    Entry { label: "1/0",  diameter_in: 0.3249, resistance_ohm_per_kft: 0.100 },
-    Entry { label: "1",    diameter_in: 0.2893, resistance_ohm_per_kft: 0.120 },
-    Entry { label: "2",    diameter_in: 0.2576, resistance_ohm_per_kft: 0.160 },
-    Entry { label: "3",    diameter_in: 0.2294, resistance_ohm_per_kft: 0.200 },
-    Entry { label: "4",    diameter_in: 0.2043, resistance_ohm_per_kft: 0.250 },
-    Entry { label: "5",    diameter_in: 0.1819, resistance_ohm_per_kft: 0.310 },
-    Entry { label: "6",    diameter_in: 0.1620, resistance_ohm_per_kft: 0.400 },
-    Entry { label: "7",    diameter_in: 0.1443, resistance_ohm_per_kft: 0.500 },
-    Entry { label: "8",    diameter_in: 0.1285, resistance_ohm_per_kft: 0.630 },
-    Entry { label: "9",    diameter_in: 0.1144, resistance_ohm_per_kft: 0.790 },
-    Entry { label: "10",   diameter_in: 0.1019, resistance_ohm_per_kft: 1.000 },
-    Entry { label: "11",   diameter_in: 0.0907, resistance_ohm_per_kft: 1.260 },
-    Entry { label: "12",   diameter_in: 0.0808, resistance_ohm_per_kft: 1.590 },
-    Entry { label: "13",   diameter_in: 0.0720, resistance_ohm_per_kft: 2.000 },
-    Entry { label: "14",   diameter_in: 0.0641, resistance_ohm_per_kft: 2.530 },
-    Entry { label: "15",   diameter_in: 0.0571, resistance_ohm_per_kft: 3.190 },
-    Entry { label: "16",   diameter_in: 0.0508, resistance_ohm_per_kft: 4.020 },
-    Entry { label: "17",   diameter_in: 0.0453, resistance_ohm_per_kft: 5.060 },
-    Entry { label: "18",   diameter_in: 0.0403, resistance_ohm_per_kft: 6.390 },
-    Entry { label: "19",   diameter_in: 0.0359, resistance_ohm_per_kft: 8.050 },
-    Entry { label: "20",   diameter_in: 0.0320, resistance_ohm_per_kft: 10.150 },
-    Entry { label: "21",   diameter_in: 0.0285, resistance_ohm_per_kft: 12.800 },
-    Entry { label: "22",   diameter_in: 0.0254, resistance_ohm_per_kft: 16.140 },
-    Entry { label: "23",   diameter_in: 0.0226, resistance_ohm_per_kft: 20.360 },
-    Entry { label: "24",   diameter_in: 0.0201, resistance_ohm_per_kft: 25.670 },
-    Entry { label: "25",   diameter_in: 0.0179, resistance_ohm_per_kft: 32.370 },
-    Entry { label: "26",   diameter_in: 0.0159, resistance_ohm_per_kft: 40.810 },
-    Entry { label: "27",   diameter_in: 0.0142, resistance_ohm_per_kft: 51.470 },
-    Entry { label: "28",   diameter_in: 0.0126, resistance_ohm_per_kft: 64.900 },
-    Entry { label: "29",   diameter_in: 0.0113, resistance_ohm_per_kft: 81.830 },
-    Entry { label: "30",   diameter_in: 0.0100, resistance_ohm_per_kft: 103.200 },
-    Entry { label: "31",   diameter_in: 0.0089, resistance_ohm_per_kft: 130.100 },
-    Entry { label: "32",   diameter_in: 0.0080, resistance_ohm_per_kft: 164.100 },
-    Entry { label: "33",   diameter_in: 0.0071, resistance_ohm_per_kft: 206.900 },
-    Entry { label: "34",   diameter_in: 0.0063, resistance_ohm_per_kft: 260.900 },
-    Entry { label: "35",   diameter_in: 0.0056, resistance_ohm_per_kft: 329.000 },
-    Entry { label: "36",   diameter_in: 0.0050, resistance_ohm_per_kft: 414.800 },
-    Entry { label: "37",   diameter_in: 0.0045, resistance_ohm_per_kft: 523.100 },
-    Entry { label: "38",   diameter_in: 0.0040, resistance_ohm_per_kft: 659.600 },
-    Entry { label: "39",   diameter_in: 0.0035, resistance_ohm_per_kft: 831.800 },
-    Entry { label: "40",   diameter_in: 0.0031, resistance_ohm_per_kft: 1049.000 },
+    Entry {
+        label: "4/0",
+        diameter_in: 0.4600,
+        resistance_ohm_per_kft: 0.050,
+    },
+    Entry {
+        label: "3/0",
+        diameter_in: 0.4096,
+        resistance_ohm_per_kft: 0.060,
+    },
+    Entry {
+        label: "2/0",
+        diameter_in: 0.3648,
+        resistance_ohm_per_kft: 0.080,
+    },
+    Entry {
+        label: "1/0",
+        diameter_in: 0.3249,
+        resistance_ohm_per_kft: 0.100,
+    },
+    Entry {
+        label: "1",
+        diameter_in: 0.2893,
+        resistance_ohm_per_kft: 0.120,
+    },
+    Entry {
+        label: "2",
+        diameter_in: 0.2576,
+        resistance_ohm_per_kft: 0.160,
+    },
+    Entry {
+        label: "3",
+        diameter_in: 0.2294,
+        resistance_ohm_per_kft: 0.200,
+    },
+    Entry {
+        label: "4",
+        diameter_in: 0.2043,
+        resistance_ohm_per_kft: 0.250,
+    },
+    Entry {
+        label: "5",
+        diameter_in: 0.1819,
+        resistance_ohm_per_kft: 0.310,
+    },
+    Entry {
+        label: "6",
+        diameter_in: 0.1620,
+        resistance_ohm_per_kft: 0.400,
+    },
+    Entry {
+        label: "7",
+        diameter_in: 0.1443,
+        resistance_ohm_per_kft: 0.500,
+    },
+    Entry {
+        label: "8",
+        diameter_in: 0.1285,
+        resistance_ohm_per_kft: 0.630,
+    },
+    Entry {
+        label: "9",
+        diameter_in: 0.1144,
+        resistance_ohm_per_kft: 0.790,
+    },
+    Entry {
+        label: "10",
+        diameter_in: 0.1019,
+        resistance_ohm_per_kft: 1.000,
+    },
+    Entry {
+        label: "11",
+        diameter_in: 0.0907,
+        resistance_ohm_per_kft: 1.260,
+    },
+    Entry {
+        label: "12",
+        diameter_in: 0.0808,
+        resistance_ohm_per_kft: 1.590,
+    },
+    Entry {
+        label: "13",
+        diameter_in: 0.0720,
+        resistance_ohm_per_kft: 2.000,
+    },
+    Entry {
+        label: "14",
+        diameter_in: 0.0641,
+        resistance_ohm_per_kft: 2.530,
+    },
+    Entry {
+        label: "15",
+        diameter_in: 0.0571,
+        resistance_ohm_per_kft: 3.190,
+    },
+    Entry {
+        label: "16",
+        diameter_in: 0.0508,
+        resistance_ohm_per_kft: 4.020,
+    },
+    Entry {
+        label: "17",
+        diameter_in: 0.0453,
+        resistance_ohm_per_kft: 5.060,
+    },
+    Entry {
+        label: "18",
+        diameter_in: 0.0403,
+        resistance_ohm_per_kft: 6.390,
+    },
+    Entry {
+        label: "19",
+        diameter_in: 0.0359,
+        resistance_ohm_per_kft: 8.050,
+    },
+    Entry {
+        label: "20",
+        diameter_in: 0.0320,
+        resistance_ohm_per_kft: 10.150,
+    },
+    Entry {
+        label: "21",
+        diameter_in: 0.0285,
+        resistance_ohm_per_kft: 12.800,
+    },
+    Entry {
+        label: "22",
+        diameter_in: 0.0254,
+        resistance_ohm_per_kft: 16.140,
+    },
+    Entry {
+        label: "23",
+        diameter_in: 0.0226,
+        resistance_ohm_per_kft: 20.360,
+    },
+    Entry {
+        label: "24",
+        diameter_in: 0.0201,
+        resistance_ohm_per_kft: 25.670,
+    },
+    Entry {
+        label: "25",
+        diameter_in: 0.0179,
+        resistance_ohm_per_kft: 32.370,
+    },
+    Entry {
+        label: "26",
+        diameter_in: 0.0159,
+        resistance_ohm_per_kft: 40.810,
+    },
+    Entry {
+        label: "27",
+        diameter_in: 0.0142,
+        resistance_ohm_per_kft: 51.470,
+    },
+    Entry {
+        label: "28",
+        diameter_in: 0.0126,
+        resistance_ohm_per_kft: 64.900,
+    },
+    Entry {
+        label: "29",
+        diameter_in: 0.0113,
+        resistance_ohm_per_kft: 81.830,
+    },
+    Entry {
+        label: "30",
+        diameter_in: 0.0100,
+        resistance_ohm_per_kft: 103.200,
+    },
+    Entry {
+        label: "31",
+        diameter_in: 0.0089,
+        resistance_ohm_per_kft: 130.100,
+    },
+    Entry {
+        label: "32",
+        diameter_in: 0.0080,
+        resistance_ohm_per_kft: 164.100,
+    },
+    Entry {
+        label: "33",
+        diameter_in: 0.0071,
+        resistance_ohm_per_kft: 206.900,
+    },
+    Entry {
+        label: "34",
+        diameter_in: 0.0063,
+        resistance_ohm_per_kft: 260.900,
+    },
+    Entry {
+        label: "35",
+        diameter_in: 0.0056,
+        resistance_ohm_per_kft: 329.000,
+    },
+    Entry {
+        label: "36",
+        diameter_in: 0.0050,
+        resistance_ohm_per_kft: 414.800,
+    },
+    Entry {
+        label: "37",
+        diameter_in: 0.0045,
+        resistance_ohm_per_kft: 523.100,
+    },
+    Entry {
+        label: "38",
+        diameter_in: 0.0040,
+        resistance_ohm_per_kft: 659.600,
+    },
+    Entry {
+        label: "39",
+        diameter_in: 0.0035,
+        resistance_ohm_per_kft: 831.800,
+    },
+    Entry {
+        label: "40",
+        diameter_in: 0.0031,
+        resistance_ohm_per_kft: 1049.000,
+    },
 ];
 
 static ALL_AWG: [Awg; 44] = [
-    Awg::Awg4_0, Awg::Awg3_0, Awg::Awg2_0, Awg::Awg1_0,
-    Awg::Awg1,  Awg::Awg2,  Awg::Awg3,  Awg::Awg4,
-    Awg::Awg5,  Awg::Awg6,  Awg::Awg7,  Awg::Awg8,
-    Awg::Awg9,  Awg::Awg10, Awg::Awg11, Awg::Awg12,
-    Awg::Awg13, Awg::Awg14, Awg::Awg15, Awg::Awg16,
-    Awg::Awg17, Awg::Awg18, Awg::Awg19, Awg::Awg20,
-    Awg::Awg21, Awg::Awg22, Awg::Awg23, Awg::Awg24,
-    Awg::Awg25, Awg::Awg26, Awg::Awg27, Awg::Awg28,
-    Awg::Awg29, Awg::Awg30, Awg::Awg31, Awg::Awg32,
-    Awg::Awg33, Awg::Awg34, Awg::Awg35, Awg::Awg36,
-    Awg::Awg37, Awg::Awg38, Awg::Awg39, Awg::Awg40,
+    Awg::Awg4_0,
+    Awg::Awg3_0,
+    Awg::Awg2_0,
+    Awg::Awg1_0,
+    Awg::Awg1,
+    Awg::Awg2,
+    Awg::Awg3,
+    Awg::Awg4,
+    Awg::Awg5,
+    Awg::Awg6,
+    Awg::Awg7,
+    Awg::Awg8,
+    Awg::Awg9,
+    Awg::Awg10,
+    Awg::Awg11,
+    Awg::Awg12,
+    Awg::Awg13,
+    Awg::Awg14,
+    Awg::Awg15,
+    Awg::Awg16,
+    Awg::Awg17,
+    Awg::Awg18,
+    Awg::Awg19,
+    Awg::Awg20,
+    Awg::Awg21,
+    Awg::Awg22,
+    Awg::Awg23,
+    Awg::Awg24,
+    Awg::Awg25,
+    Awg::Awg26,
+    Awg::Awg27,
+    Awg::Awg28,
+    Awg::Awg29,
+    Awg::Awg30,
+    Awg::Awg31,
+    Awg::Awg32,
+    Awg::Awg33,
+    Awg::Awg34,
+    Awg::Awg35,
+    Awg::Awg36,
+    Awg::Awg37,
+    Awg::Awg38,
+    Awg::Awg39,
+    Awg::Awg40,
 ];
 
 impl Awg {
@@ -171,7 +382,7 @@ pub fn lookup(awg: Awg) -> WireGaugeResult {
         diameter_mils,
         resistance_ohm_per_kft: entry.resistance_ohm_per_kft,
         area_circular_mils,
-        area_saturn: area_circular_mils / 700.0,
+        area_saturn_display: area_circular_mils / 700.0,
     }
 }
 
@@ -183,7 +394,7 @@ mod tests {
 
     // AWG 4/0: diameter=0.4600 in, resistance=0.050 ohm/kft
     // diameter_mils = 460.0, area_circular_mils = 211600.0
-    // area_saturn = 211600 / 700 = 302.285714...
+    // area_saturn_display = 211600 / 700 = 302.285714...
     #[test]
     fn awg_4_0_properties() {
         let r = lookup(Awg::Awg4_0);
@@ -192,7 +403,7 @@ mod tests {
         assert_relative_eq!(r.resistance_ohm_per_kft, 0.050, epsilon = 1e-10);
         assert_relative_eq!(r.diameter_mils, 460.0, epsilon = 1e-10);
         assert_relative_eq!(r.area_circular_mils, 211_600.0, epsilon = 1e-6);
-        assert_relative_eq!(r.area_saturn, 302.285_714_285, epsilon = 1e-6);
+        assert_relative_eq!(r.area_saturn_display, 302.285_714_285, epsilon = 1e-6);
     }
 
     // AWG 22: diameter=0.0254 in, resistance=16.140 ohm/kft

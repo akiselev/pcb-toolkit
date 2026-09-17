@@ -36,7 +36,7 @@ pub enum PpmSub {
 
     /// Crystal load capacitance.
     XtalLoad {
-        /// Stray PCB capacitance [F, nF, pF, uF].
+        /// Lumped stray capacitance across the crystal terminals [F, nF, pF, uF].
         #[arg(long)]
         stray: Capacitance,
         /// Load capacitor 1 [F, nF, pF, uF].
@@ -51,8 +51,8 @@ pub enum PpmSub {
 pub fn run(args: &PpmArgs, json: bool) -> Result<()> {
     match &args.sub {
         PpmSub::HzToPpm { center, max } => {
-            let result = ppm::hz_to_ppm(center.hz(), max.hz())
-                .context("Hz to PPM calculation failed")?;
+            let result =
+                ppm::hz_to_ppm(center.hz(), max.hz()).context("Hz to PPM calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -64,8 +64,8 @@ pub fn run(args: &PpmArgs, json: bool) -> Result<()> {
         }
 
         PpmSub::PpmToHz { center, ppm } => {
-            let result = ppm::ppm_to_hz(center.hz(), *ppm)
-                .context("PPM to Hz calculation failed")?;
+            let result =
+                ppm::ppm_to_hz(center.hz(), *ppm).context("PPM to Hz calculation failed")?;
             if json {
                 output::print_result(&result, true)?;
             } else {
@@ -85,8 +85,14 @@ pub fn run(args: &PpmArgs, json: bool) -> Result<()> {
             } else {
                 println!("Crystal Load Capacitance");
                 println!("────────────────────────");
-                println!("  C load (calc)         = {:.4} pF", result.c_load_calc_f * 1e12);
-                println!("  C load (rule of thumb)= {:.4} pF", result.c_load_rule_of_thumb_f * 1e12);
+                println!(
+                    "  C load                = {:.4} pF  (C1·C2/(C1+C2) + C_stray; compare with the crystal's C_L)",
+                    result.c_load_f * 1e12
+                );
+                println!(
+                    "  (C1+C2)/2             = {:.4} pF  (Saturn 'rule of thumb' display; not the crystal load)",
+                    result.c_external_average_f * 1e12
+                );
             }
         }
     }

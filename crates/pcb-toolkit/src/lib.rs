@@ -1,8 +1,18 @@
+//! PCB design calculators: transmission-line impedance, differential pairs,
+//! current capacity, vias, and supporting utilities.
+//!
+//! Every calculator module exposes a `MODEL` constant ([`model::ModelInfo`])
+//! stating which published model it implements, its validity range, and its
+//! validation status. Consult it before relying on a result.
+
 pub mod constants;
 pub mod copper;
 pub mod error;
 pub mod materials;
+pub mod math;
+pub mod model;
 pub mod units;
+pub mod validate;
 
 // Calculators
 pub mod crosstalk;
@@ -26,4 +36,5 @@ pub mod wire_gauge;
 pub mod tables;
 
 pub use error::CalcError;
-pub use units::{Capacitance, Freq, Inductance, Length, Temperature, UnitParseError};
+pub use model::{ModelInfo, ModelStatus};
+pub use units::{Capacitance, Freq, Inductance, Length, Resistance, Temperature, UnitParseError};

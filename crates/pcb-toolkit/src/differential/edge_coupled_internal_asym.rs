@@ -1,20 +1,45 @@
-//! Edge-coupled internal asymmetric (offset) differential pair impedance calculator.
+//! Edge-coupled internal asymmetric (offset stripline) differential pair.
 //!
-//! Computes odd-mode, even-mode, and differential impedance for an offset stripline
-//! differential pair using the Wadell offset stripline formula with coupling correction.
+//! The pair sits at gaps `H1` and `H2` from the two ground planes. Each
+//! modal impedance is obtained by combining the two half-spaces: the
+//! capacitance to each plane is taken as one half of the capacitance of a
+//! centered coupled pair with twice that gap, so
+//!
+//! ```text
+//! Z = 2·Z(2H1 + T)·Z(2H2 + T) / (Z(2H1 + T) + Z(2H2 + T))
+//! ```
+//!
+//! for the single-ended, even- and odd-mode impedances separately, with the
+//! centered values from [`super::edge_coupled_internal_sym`] (Cohn 1955).
+//! The construction is exact when `H1 = H2`, symmetric under swapping the
+//! planes, and responds to the offset at fixed total spacing. Fringing
+//! coupling between the two half-spaces is neglected (Wadell §3.4.2 offset
+//! stripline approximation).
 
-use crate::CalcError;
-use super::types::{DifferentialResult, kb_terminated};
+use super::edge_coupled_internal_sym::coupled_modes;
+use super::types::{self, DifferentialResult};
+use crate::impedance::stripline::z0_offset;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Offset coupled stripline: half-space combination of Cohn 1955 modes",
+    status: ModelStatus::Compatibility,
+    reference: "Cohn 1955; Wadell 1991 §3.4.2 (offset strip half-space combination)",
+    validity: "T < min(H1, H2); exact for H1 = H2; estimated ±5% for offsets up to H1/H2 = 4",
+};
 
 /// Inputs for edge-coupled internal asymmetric (offset) differential pair.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgeCoupledInternalAsymInput {
     /// Conductor width (mils).
     pub width: f64,
     /// Gap between traces (mils).
     pub spacing: f64,
-    /// Dielectric height from trace to top ground plane (mils).
+    /// Dielectric gap from the trace face to the top ground plane (mils).
     pub height1: f64,
-    /// Dielectric height from trace to bottom ground plane (mils).
+    /// Dielectric gap from the trace face to the bottom ground plane (mils).
     pub height2: f64,
     /// Conductor thickness (mils).
     pub thickness: f64,
@@ -22,60 +47,34 @@ pub struct EdgeCoupledInternalAsymInput {
     pub er: f64,
 }
 
-/// Compute differential impedance for an edge-coupled internal asymmetric (offset) pair.
+fn parallel(a: f64, b: f64) -> f64 {
+    2.0 * a * b / (a + b)
+}
+
+/// Compute differential impedance for an edge-coupled offset stripline pair.
 pub fn calculate(input: &EdgeCoupledInternalAsymInput) -> Result<DifferentialResult, CalcError> {
-    let EdgeCoupledInternalAsymInput { width, spacing, height1, height2, thickness, er } = *input;
+    let EdgeCoupledInternalAsymInput {
+        width,
+        spacing,
+        height1,
+        height2,
+        thickness,
+        er,
+    } = *input;
+    validate::positive("height1", height1)?;
+    validate::positive("height2", height2)?;
+    validate::non_negative("thickness", thickness)?;
 
-    if width <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "width", value: width });
-    }
-    if spacing <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "spacing", value: spacing });
-    }
-    if height1 <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "height1", value: height1 });
-    }
-    if height2 <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "height2", value: height2 });
-    }
-    if thickness <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "thickness", value: thickness });
-    }
-    if er < 1.0 {
-        return Err(CalcError::OutOfRange {
-            name: "er",
-            value: er,
-            expected: ">= 1.0",
-        });
-    }
-
-    let z0 = (60.0 / er.sqrt())
-        * (1.9 * (height1 + height2 + thickness) / (0.8 * width + thickness)).ln();
-
-    let h_ref = (height1 + height2) / 2.0;
-    let zodd = z0 * (1.0 - 0.48 * (-0.96 * spacing / h_ref).exp());
-    let zeven = z0 * z0 / zodd;
-    let zdiff = 2.0 * zodd;
-    let kb = (zeven - zodd) / (zeven + zodd);
-    let kb_db = 20.0 * kb.log10();
-    let kb_term = kb_terminated(kb);
-    let kb_term_db = 20.0 * kb_term.log10();
-
-    Ok(DifferentialResult {
-        zdiff,
-        zo: z0,
-        zodd,
-        zeven,
-        kb,
-        kb_db,
-        kb_term,
-        kb_term_db,
-    })
+    let zo = z0_offset(width, height1, height2, thickness, er)?;
+    let (ze1, zo1) = coupled_modes(width, spacing, 2.0 * height1 + thickness, thickness, er)?;
+    let (ze2, zo2) = coupled_modes(width, spacing, 2.0 * height2 + thickness, thickness, er)?;
+    types::build(zo, parallel(zo1, zo2), parallel(ze1, ze2))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::differential::edge_coupled_internal_sym::{self, EdgeCoupledInternalSymInput};
     use approx::assert_relative_eq;
 
     fn input(
@@ -86,81 +85,69 @@ mod tests {
         thickness: f64,
         er: f64,
     ) -> EdgeCoupledInternalAsymInput {
-        EdgeCoupledInternalAsymInput { width, spacing, height1, height2, thickness, er }
+        EdgeCoupledInternalAsymInput {
+            width,
+            spacing,
+            height1,
+            height2,
+            thickness,
+            er,
+        }
     }
 
-    /// When H1 == H2 the asymmetric formula collapses to the symmetric offset stripline.
-    /// Z0 = (60/√Er) × ln(1.9 × (2H + T) / (0.8W + T))
     #[test]
-    fn symmetric_case_matches_formula() {
-        let w = 10.0;
-        let s = 5.0;
-        let h = 10.0;
-        let t = 1.4;
-        let er = 4.6_f64;
-
-        let result = calculate(&input(w, s, h, h, t, er)).unwrap();
-
-        let z0_expected = (60.0 / er.sqrt()) * (1.9 * (2.0 * h + t) / (0.8 * w + t)).ln();
-        assert_relative_eq!(result.zo, z0_expected, max_relative = 1e-10);
-
-        let h_ref = h;
-        let zodd_expected = z0_expected * (1.0 - 0.48 * (-0.96 * s / h_ref).exp());
-        assert_relative_eq!(result.zodd, zodd_expected, max_relative = 1e-10);
-        assert_relative_eq!(result.zdiff, 2.0 * zodd_expected, max_relative = 1e-10);
+    fn symmetric_case_matches_centered_calculator_exactly() {
+        let asym = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
+        let sym = edge_coupled_internal_sym::calculate(&EdgeCoupledInternalSymInput {
+            width: 10.0,
+            spacing: 5.0,
+            height: 10.0,
+            thickness: 1.4,
+            er: 4.6,
+        })
+        .unwrap();
+        assert_relative_eq!(asym.zo, sym.zo, max_relative = 1e-12);
+        assert_relative_eq!(asym.zodd, sym.zodd, max_relative = 1e-12);
+        assert_relative_eq!(asym.zeven, sym.zeven, max_relative = 1e-12);
     }
 
-    /// Changing H1 alters the total dielectric span (H1+H2) and thus Z0.
     #[test]
-    fn asymmetric_heights_change_z0() {
-        let baseline = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
-        let taller   = calculate(&input(10.0, 5.0, 15.0, 10.0, 1.4, 4.6)).unwrap();
-
+    fn offset_at_fixed_total_spacing_changes_impedance() {
+        let centered = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
+        let offset = calculate(&input(10.0, 5.0, 1.0, 19.0, 1.4, 4.6)).unwrap();
+        assert!((centered.zdiff - offset.zdiff).abs() > 1.0);
         assert!(
-            taller.zo > baseline.zo,
-            "taller dielectric span Z0 {:.4} should exceed baseline Z0 {:.4}",
-            taller.zo,
-            baseline.zo
+            offset.zdiff < centered.zdiff,
+            "closer plane must lower Zdiff"
         );
     }
 
-    /// Wider spacing reduces inter-trace coupling.
+    #[test]
+    fn swapping_planes_is_a_symmetry() {
+        let a = calculate(&input(10.0, 5.0, 1.0, 19.0, 1.4, 4.6)).unwrap();
+        let b = calculate(&input(10.0, 5.0, 19.0, 1.0, 1.4, 4.6)).unwrap();
+        assert_relative_eq!(a.zdiff, b.zdiff, max_relative = 1e-12);
+        assert_relative_eq!(a.kb, b.kb, max_relative = 1e-12);
+    }
+
+    #[test]
+    fn taller_span_raises_z0() {
+        let baseline = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
+        let taller = calculate(&input(10.0, 5.0, 15.0, 10.0, 1.4, 4.6)).unwrap();
+        assert!(taller.zo > baseline.zo);
+    }
+
     #[test]
     fn wider_spacing_reduces_coupling() {
-        let close = calculate(&input(10.0,  5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
-        let far   = calculate(&input(10.0, 20.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
-
-        assert!(
-            far.kb.abs() < close.kb.abs(),
-            "wider spacing Kb {:.4} should be smaller than {:.4}",
-            far.kb,
-            close.kb
-        );
-    }
-
-    /// Higher substrate permittivity lowers single-ended impedance.
-    #[test]
-    fn higher_er_gives_lower_z0() {
-        let low_er  = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 2.2)).unwrap();
-        let high_er = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
-
-        assert!(
-            high_er.zo < low_er.zo,
-            "higher Er Z0 {:.3} should be less than lower Er Z0 {:.3}",
-            high_er.zo,
-            low_er.zo
-        );
+        let close = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
+        let far = calculate(&input(10.0, 20.0, 10.0, 10.0, 1.4, 4.6)).unwrap();
+        assert!(far.kb < close.kb);
     }
 
     #[test]
-    fn rejects_negative_height1() {
-        let result = calculate(&input(10.0, 5.0, -1.0, 10.0, 1.4, 4.6));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_er_below_one() {
-        let result = calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 0.5));
-        assert!(result.is_err());
+    fn rejects_invalid_inputs() {
+        assert!(calculate(&input(10.0, 5.0, -1.0, 10.0, 1.4, 4.6)).is_err());
+        assert!(calculate(&input(10.0, 5.0, 10.0, 10.0, 1.4, 0.5)).is_err());
+        assert!(calculate(&input(10.0, 5.0, f64::NAN, 10.0, 1.4, 4.6)).is_err());
     }
 }

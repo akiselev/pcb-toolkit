@@ -168,7 +168,7 @@ pub fn from_henries(value: f64, unit: IndUnit) -> f64 {
 pub fn to_celsius(value: f64, unit: TempUnit) -> f64 {
     match unit {
         TempUnit::Celsius => value,
-        TempUnit::Fahrenheit => (value - 32.0) * 5.0 / 9.0,
+        TempUnit::Fahrenheit => (value - 32.0) / 1.8,
     }
 }
 
@@ -275,7 +275,7 @@ impl FromStr for Length {
             "um" | "µm" => LengthUnit::Um,
             _ => return Err(UnitParseError::UnknownSuffix(s.to_string())),
         };
-        Ok(Length(to_mils(value, unit)))
+        finite_converted(to_mils(value, unit)).map(Length)
     }
 }
 
@@ -316,7 +316,7 @@ impl FromStr for Freq {
             "ghz" => FreqUnit::GHz,
             _ => return Err(UnitParseError::UnknownSuffix(s.to_string())),
         };
-        Ok(Freq(to_hz(value, unit)))
+        finite_converted(to_hz(value, unit)).map(Freq)
     }
 }
 
@@ -358,7 +358,7 @@ impl FromStr for Capacitance {
             "pf" => CapUnit::PF,
             _ => return Err(UnitParseError::UnknownSuffix(s.to_string())),
         };
-        Ok(Capacitance(to_farads(value, unit)))
+        finite_converted(to_farads(value, unit)).map(Capacitance)
     }
 }
 
@@ -400,7 +400,7 @@ impl FromStr for Inductance {
             "nh" => IndUnit::NH,
             _ => return Err(UnitParseError::UnknownSuffix(s.to_string())),
         };
-        Ok(Inductance(to_henries(value, unit)))
+        finite_converted(to_henries(value, unit)).map(Inductance)
     }
 }
 
@@ -440,13 +440,65 @@ impl FromStr for Temperature {
             "F" | "°F" | "degF" => TempUnit::Fahrenheit,
             _ => return Err(UnitParseError::UnknownSuffix(s.to_string())),
         };
-        Ok(Temperature(to_celsius(value, unit)))
+        finite_converted(to_celsius(value, unit)).map(Temperature)
     }
 }
 
 impl fmt::Display for Temperature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}°C", self.0)
+    }
+}
+
+/// Reject a converted value that overflowed to infinity (e.g. `"1e308in"`).
+fn finite_converted(value: f64) -> Result<f64, UnitParseError> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(UnitParseError::NotFinite)
+    }
+}
+
+/// A resistance value stored in canonical Ohms.
+///
+/// Parses strings like `"50"`, `"4.7kOhm"`, `"10k"`, `"1MOhm"`, `"1M"`, `"100mOhm"`.
+/// Bare numbers (no suffix) are interpreted as Ohms. The `m`/`M` prefixes are
+/// case-sensitive (milli / mega); everything else is case-insensitive.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Resistance(pub f64);
+
+impl Resistance {
+    pub fn ohms(self) -> f64 {
+        self.0
+    }
+}
+
+impl FromStr for Resistance {
+    type Err = UnitParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (num, suffix) = split_number_suffix(s);
+        let value: f64 = num
+            .parse()
+            .map_err(|_| UnitParseError::InvalidNumber(s.to_string()))?;
+        if !value.is_finite() {
+            return Err(UnitParseError::NotFinite);
+        }
+        let suffix = suffix.replace('Ω', "ohm");
+        let scale = match suffix.as_str() {
+            "" | "ohm" | "Ohm" | "OHM" | "ohms" | "Ohms" => 1.0,
+            "mohm" | "mOhm" | "mohms" | "mOhms" => 1e-3,
+            "k" | "kohm" | "kOhm" | "KOhm" | "Kohm" | "kohms" | "kOhms" | "K" => 1e3,
+            "M" | "Mohm" | "MOhm" | "MOHM" | "Mohms" | "MOhms" => 1e6,
+            _ => return Err(UnitParseError::UnknownSuffix(s.to_string())),
+        };
+        finite_converted(value * scale).map(Resistance)
+    }
+}
+
+impl fmt::Display for Resistance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}Ohm", self.0)
     }
 }
 
@@ -457,7 +509,12 @@ mod tests {
     #[test]
     fn length_roundtrip() {
         let mils = 100.0;
-        for unit in [LengthUnit::Mils, LengthUnit::Mm, LengthUnit::Inches, LengthUnit::Um] {
+        for unit in [
+            LengthUnit::Mils,
+            LengthUnit::Mm,
+            LengthUnit::Inches,
+            LengthUnit::Um,
+        ] {
             let converted = from_mils(mils, unit);
             let back = to_mils(converted, unit);
             assert!((back - mils).abs() < 1e-10, "roundtrip failed for {unit:?}");
@@ -686,5 +743,33 @@ mod tests {
     #[test]
     fn display_temp() {
         assert_eq!(format!("{}", Temperature(25.0)), "25°C");
+    }
+
+    // ── Overflow after scaling (audit A10) ────────────────────────
+
+    #[test]
+    fn conversion_overflow_is_rejected() {
+        assert!("1e308in".parse::<Length>().is_err());
+        assert!("1e308GHz".parse::<Freq>().is_err());
+        assert!("1e308k".parse::<Resistance>().is_err());
+        assert!("1e300in".parse::<Length>().is_ok());
+    }
+
+    #[test]
+    fn fahrenheit_near_max_does_not_overflow_intermediate() {
+        let t: Temperature = "1e308F".parse().unwrap();
+        assert!(t.celsius().is_finite());
+        assert!((t.celsius() - 1e308 / 1.8).abs() < 1e293);
+    }
+
+    #[test]
+    fn parse_resistance() {
+        assert_eq!("50".parse::<Resistance>().unwrap().ohms(), 50.0);
+        assert!(("4.7kOhm".parse::<Resistance>().unwrap().ohms() - 4700.0).abs() < 1e-9);
+        assert!(("10k".parse::<Resistance>().unwrap().ohms() - 1e4).abs() < 1e-9);
+        assert!(("1M".parse::<Resistance>().unwrap().ohms() - 1e6).abs() < 1e-6);
+        assert!(("100mOhm".parse::<Resistance>().unwrap().ohms() - 0.1).abs() < 1e-12);
+        assert!(("1Ω".parse::<Resistance>().unwrap().ohms() - 1.0).abs() < 1e-12);
+        assert!("1F".parse::<Resistance>().is_err());
     }
 }

@@ -8,15 +8,18 @@ use crate::output;
 
 #[derive(Args)]
 pub struct WavelengthArgs {
+    /// Frequency [Hz, kHz, MHz, GHz].
     #[arg(short, long)]
     pub freq: Freq,
+    /// Effective relative permittivity of the line (use the Er_eff from the
+    /// impedance calculator for a microstrip, or the bulk εr for stripline).
     #[arg(long, default_value = "1.0")]
     pub er: f64,
 }
 
 pub fn run(args: &WavelengthArgs, json: bool) -> Result<()> {
-    let result = wavelength::wavelength(args.freq.hz(), args.er)
-        .context("wavelength calculation failed")?;
+    let result =
+        wavelength::wavelength(args.freq.hz(), args.er).context("wavelength calculation failed")?;
 
     if json {
         output::print_result(&result, true)?;

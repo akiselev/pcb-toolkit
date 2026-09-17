@@ -1,11 +1,22 @@
 //! Thermal management calculator.
 //!
-//! Computes junction temperature using the thermal resistance model:
-//! T_junction = R_theta_ja × P_dissipated + T_ambient
+//! Computes junction temperature using the single-resistance model
+//! `T_junction = θJA × P + T_ambient`. θJA is a scenario-specific quantity
+//! (board, airflow, copper area) supplied by the caller; the datasheet
+//! JEDEC value is only representative of the JEDEC test board.
 
 use serde::{Deserialize, Serialize};
 
-use crate::CalcError;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Single thermal resistance junction temperature",
+    status: ModelStatus::Validated,
+    reference: "Tj = Ta + θJA·P",
+    validity: "Exact for the supplied θJA; θJA itself depends on the board and airflow",
+};
 
 /// Inputs for thermal management calculation.
 pub struct ThermalInput {
@@ -28,13 +39,8 @@ pub struct ThermalResult {
 
 /// Calculate junction temperature.
 pub fn calculate(input: &ThermalInput) -> Result<ThermalResult, CalcError> {
-    if input.r_theta_ja <= 0.0 {
-        return Err(CalcError::OutOfRange {
-            name: "r_theta_ja",
-            value: input.r_theta_ja,
-            expected: "> 0",
-        });
-    }
+    validate::positive_quantity("r_theta_ja", input.r_theta_ja)?;
+    validate::finite("power_w", input.power_w)?;
     if input.power_w < 0.0 {
         return Err(CalcError::OutOfRange {
             name: "power_w",
@@ -42,11 +48,18 @@ pub fn calculate(input: &ThermalInput) -> Result<ThermalResult, CalcError> {
             expected: ">= 0",
         });
     }
+    validate::finite("t_ambient_c", input.t_ambient_c)?;
 
-    let t_junction_c = input.r_theta_ja * input.power_w + input.t_ambient_c;
-    let t_junction_f = 1.8 * t_junction_c + 32.0;
+    let t_junction_c = validate::finite_result(
+        "t_junction_c",
+        input.r_theta_ja * input.power_w + input.t_ambient_c,
+    )?;
+    let t_junction_f = validate::finite_result("t_junction_f", 1.8 * t_junction_c + 32.0)?;
 
-    Ok(ThermalResult { t_junction_c, t_junction_f })
+    Ok(ThermalResult {
+        t_junction_c,
+        t_junction_f,
+    })
 }
 
 #[cfg(test)]
@@ -92,12 +105,34 @@ mod tests {
     }
 
     #[test]
+    fn nonfinite_inputs_rejected() {
+        assert!(
+            calculate(&ThermalInput {
+                r_theta_ja: f64::NAN,
+                power_w: 1.0,
+                t_ambient_c: 25.0
+            })
+            .is_err()
+        );
+        assert!(
+            calculate(&ThermalInput {
+                r_theta_ja: 50.0,
+                power_w: 1.0,
+                t_ambient_c: f64::INFINITY
+            })
+            .is_err()
+        );
+    }
+
+    #[test]
     fn invalid_r_theta() {
-        assert!(calculate(&ThermalInput {
-            r_theta_ja: -1.0,
-            power_w: 1.0,
-            t_ambient_c: 25.0,
-        })
-        .is_err());
+        assert!(
+            calculate(&ThermalInput {
+                r_theta_ja: -1.0,
+                power_w: 1.0,
+                t_ambient_c: 25.0,
+            })
+            .is_err()
+        );
     }
 }

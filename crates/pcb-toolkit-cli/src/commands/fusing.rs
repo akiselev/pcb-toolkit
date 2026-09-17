@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 
 use pcb_toolkit::copper::{CopperWeight, EtchFactor, PlatingThickness};
@@ -7,18 +7,25 @@ use pcb_toolkit::units::Length;
 
 use crate::output;
 
+/// Onderdonk adiabatic fusing (melting-onset) current for a trace.
 #[derive(Args)]
 pub struct FusingArgs {
+    /// Trace width [mil, mm, in, um].
     #[arg(short, long)]
     pub width: Length,
+    /// Base copper weight: 0.25oz, 0.5oz, 1oz, 1.5oz, 2oz, 2.5oz, 3oz, 4oz, 5oz.
     #[arg(short, long)]
     pub copper: String,
+    /// Plating: bare, 0.5oz, 1oz, 1.5oz, 2oz, 2.5oz, 3oz.
     #[arg(short, long, default_value = "bare")]
     pub plating: String,
+    /// Etch factor: none, 1:1, or 2:1.
     #[arg(short, long, default_value = "none")]
     pub etch: String,
+    /// Pulse duration in seconds.
     #[arg(short, long)]
     pub time: f64,
+    /// Ambient temperature (°C).
     #[arg(short, long, default_value = "25")]
     pub ambient: f64,
 }
@@ -27,11 +34,11 @@ fn parse_plating(s: &str) -> Result<PlatingThickness> {
     match s.to_lowercase().trim_end_matches("oz").trim() {
         "bare" | "0" => Ok(PlatingThickness::Bare),
         "0.5" => Ok(PlatingThickness::Oz05),
-        "1"   => Ok(PlatingThickness::Oz1),
+        "1" => Ok(PlatingThickness::Oz1),
         "1.5" => Ok(PlatingThickness::Oz15),
-        "2"   => Ok(PlatingThickness::Oz2),
+        "2" => Ok(PlatingThickness::Oz2),
         "2.5" => Ok(PlatingThickness::Oz25),
-        "3"   => Ok(PlatingThickness::Oz3),
+        "3" => Ok(PlatingThickness::Oz3),
         _ => bail!(
             "unknown plating '{}' — valid values: bare, 0.5oz, 1oz, 1.5oz, 2oz, 2.5oz, 3oz",
             s
@@ -41,19 +48,16 @@ fn parse_plating(s: &str) -> Result<PlatingThickness> {
 
 fn parse_etch(s: &str) -> Result<EtchFactor> {
     match s.to_lowercase().as_str() {
-        "none" | "0"   => Ok(EtchFactor::None),
+        "none" | "0" => Ok(EtchFactor::None),
         "1:1" | "1to1" | "onetone" => Ok(EtchFactor::OneToOne),
         "2:1" | "2to1" | "twotoone" => Ok(EtchFactor::TwoToOne),
-        _ => bail!(
-            "unknown etch factor '{}' — valid values: none, 1:1, 2:1",
-            s
-        ),
+        _ => bail!("unknown etch factor '{}' — valid values: none, 1:1, 2:1", s),
     }
 }
 
 pub fn run(args: &FusingArgs, json: bool) -> Result<()> {
-    let copper_weight = CopperWeight::from_str_oz(&args.copper)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let copper_weight =
+        CopperWeight::from_str_oz(&args.copper).map_err(|e| anyhow::anyhow!("{}", e))?;
     let plating = parse_plating(&args.plating)?;
     let etch_factor = parse_etch(&args.etch)?;
 
@@ -77,6 +81,7 @@ pub fn run(args: &FusingArgs, json: bool) -> Result<()> {
         println!("  Area         = {:.4} cmil", result.area_circular_mils);
         println!("  I_fuse       = {:.4} A", result.fusing_current_a);
         println!("  T_melt       = {:.4} °C", result.melting_temp_c);
+        output::print_model(&fusing::MODEL);
     }
     Ok(())
 }

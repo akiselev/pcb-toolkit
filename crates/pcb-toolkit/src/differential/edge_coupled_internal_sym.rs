@@ -1,19 +1,42 @@
-//! Edge-coupled internal symmetric (centered stripline) differential pair impedance calculator.
+//! Edge-coupled internal symmetric (centered stripline) differential pair.
 //!
-//! Computes odd-mode, even-mode, and differential impedance for a symmetric stripline
-//! differential pair using the Cohn stripline Z0 formula with exponential coupling correction.
+//! Cohn, "Shielded Coupled-Strip Transmission Line", IRE Trans. MTT-3, 1955:
+//!
+//! * Zero thickness (exact conformal mapping):
+//!   `ke = tanh(πW/2B)·tanh(π(W+S)/2B)`, `ko = tanh(πW/2B)·coth(π(W+S)/2B)`,
+//!   `Zeven = (30π/√εr)·K(ke')/K(ke)`, `Zodd = (30π/√εr)·K(ko')/K(ko)`.
+//! * Finite thickness (Cohn 1955 eq. 18, 20, 22, via fringing-capacitance
+//!   ratios): the even mode uses eq. 18; the odd mode uses eq. 20 for
+//!   S ≥ 5T and eq. 22 (which adds the parallel-plate capacitance between
+//!   the facing edges) for S < 5T. Cohn's two odd-mode expressions differ
+//!   by about 2% at S = 5T; eq. 22 is offset in admittance so the result is
+//!   continuous there.
+//!
+//! The single-strip impedances come from [`crate::impedance::stripline`].
 
-use crate::CalcError;
-use super::types::{DifferentialResult, kb_terminated};
+use super::types::{self, DifferentialResult};
+use crate::impedance::stripline::z0_symmetric;
+use crate::math::elliptic_ratio;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, constants, validate};
+
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "Cohn 1955 coupled stripline (conformal mapping + thickness corrections)",
+    status: ModelStatus::Validated,
+    reference: "Cohn, IRE Trans. MTT-3 (1955) eq. 2–6, 18, 20, 22; Wadell 1991 §4.3",
+    validity: "Any W/B, S/B; T < B; exact for T = 0; thickness corrections ±2% for T/B ≤ 0.25",
+};
 
 /// Inputs for edge-coupled internal symmetric (centered stripline) differential pair.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EdgeCoupledInternalSymInput {
     /// Conductor width (mils).
     pub width: f64,
     /// Gap between traces (mils).
     pub spacing: f64,
-    /// Dielectric height — distance from trace to each ground plane (mils).
-    /// For centered stripline, total dielectric thickness = 2 × height.
+    /// Dielectric height — gap from each face of the trace to its ground
+    /// plane (mils). Plane-to-plane spacing is `2 × height + thickness`.
     pub height: f64,
     /// Conductor thickness (mils).
     pub thickness: f64,
@@ -21,50 +44,75 @@ pub struct EdgeCoupledInternalSymInput {
     pub er: f64,
 }
 
-/// Compute differential impedance for an edge-coupled internal symmetric (centered stripline) pair.
+/// Zero-thickness even- and odd-mode impedances (Cohn 1955 eq. 2–6) for
+/// strips of width `w`, gap `s`, plane spacing `b`.
+pub fn cohn_modes_thin(w: f64, s: f64, b: f64, er: f64) -> Result<(f64, f64), CalcError> {
+    let a = (std::f64::consts::PI * w / (2.0 * b)).tanh();
+    let c = (std::f64::consts::PI * (w + s) / (2.0 * b)).tanh();
+    let ke = a * c;
+    let ko = a / c;
+    let scale = 30.0 * std::f64::consts::PI / er.sqrt();
+    let ze = scale / elliptic_ratio(ke)?;
+    let zo = scale / elliptic_ratio(ko)?;
+    Ok((ze, zo))
+}
+
+/// Ratio of the thick-edge fringing capacitance to its zero-thickness value
+/// (Cohn 1954 eq. 12 form), `x = T/B`.
+fn fringe_ratio(x: f64) -> f64 {
+    let y = 1.0 / (1.0 - x);
+    (2.0 * y * (y + 1.0).ln() - (y - 1.0) * (y * y - 1.0).ln()) / (2.0 * std::f64::consts::LN_2)
+}
+
+/// Even- and odd-mode impedances of a coupled pair of width `w`, gap `s`,
+/// thickness `t`, plane spacing `b` in dielectric `er`.
+pub fn coupled_modes(w: f64, s: f64, b: f64, t: f64, er: f64) -> Result<(f64, f64), CalcError> {
+    validate::positive("spacing", s)?;
+    validate::er(er)?;
+    let z0s = z0_symmetric(w, b, t, er)?; // validates w, b, t
+    if t <= 0.0 {
+        return cohn_modes_thin(w, s, b, er);
+    }
+    let z0s0 = z0_symmetric(w, b, 0.0, er)?;
+    let (ze0, zo0) = cohn_modes_thin(w, s, b, er)?;
+    let r = fringe_ratio(t / b);
+    let eta = constants::ETA_0 / er.sqrt();
+    let cf0 = 2.0 * std::f64::consts::LN_2 / std::f64::consts::PI;
+    let cft = r * cf0;
+
+    // Cohn eq. 18.
+    let ye = 1.0 / z0s - r * (1.0 / z0s0 - 1.0 / ze0);
+
+    // Cohn eq. 20 (S ≥ 5T) and eq. 22 (S < 5T).
+    let y20 = |zo0: f64| 1.0 / z0s + r * (1.0 / zo0 - 1.0 / z0s0);
+    let y22 = |zo0: f64, s: f64| {
+        1.0 / zo0 + (1.0 / z0s - 1.0 / z0s0) - (2.0 / eta) * (cft - cf0) + 2.0 * t / (eta * s)
+    };
+    let yo = if s >= 5.0 * t {
+        y20(zo0)
+    } else {
+        let s5 = 5.0 * t;
+        let (_, zo0_5) = cohn_modes_thin(w, s5, b, er)?;
+        y22(zo0, s) - y22(zo0_5, s5) + y20(zo0_5)
+    };
+    Ok((1.0 / ye, 1.0 / yo))
+}
+
+/// Compute differential impedance for an edge-coupled centered stripline pair.
 pub fn calculate(input: &EdgeCoupledInternalSymInput) -> Result<DifferentialResult, CalcError> {
-    let EdgeCoupledInternalSymInput { width, spacing, height, thickness, er } = *input;
-
-    if width <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "width", value: width });
-    }
-    if spacing <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "spacing", value: spacing });
-    }
-    if height <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "height", value: height });
-    }
-    if thickness <= 0.0 {
-        return Err(CalcError::NegativeDimension { name: "thickness", value: thickness });
-    }
-    if er < 1.0 {
-        return Err(CalcError::OutOfRange {
-            name: "er",
-            value: er,
-            expected: ">= 1.0",
-        });
-    }
-
-    let z0 = (60.0 / er.sqrt()) * (1.9 * (2.0 * height + thickness) / (0.8 * width + thickness)).ln();
-
-    let zodd = z0 * (1.0 - 0.48 * (-0.96 * spacing / height).exp());
-    let zeven = z0 * z0 / zodd;
-    let zdiff = 2.0 * zodd;
-    let kb = (zeven - zodd) / (zeven + zodd);
-    let kb_db = 20.0 * kb.log10();
-    let kb_term = kb_terminated(kb);
-    let kb_term_db = 20.0 * kb_term.log10();
-
-    Ok(DifferentialResult {
-        zdiff,
-        zo: z0,
-        zodd,
-        zeven,
-        kb,
-        kb_db,
-        kb_term,
-        kb_term_db,
-    })
+    let EdgeCoupledInternalSymInput {
+        width,
+        spacing,
+        height,
+        thickness,
+        er,
+    } = *input;
+    validate::positive("height", height)?;
+    validate::non_negative("thickness", thickness)?;
+    let b = 2.0 * height + thickness;
+    let zo = z0_symmetric(width, b, thickness, er)?;
+    let (zeven, zodd) = coupled_modes(width, spacing, b, thickness, er)?;
+    types::build(zo, zodd, zeven)
 }
 
 #[cfg(test)]
@@ -72,72 +120,94 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
 
-    fn input(width: f64, spacing: f64, height: f64, thickness: f64, er: f64) -> EdgeCoupledInternalSymInput {
-        EdgeCoupledInternalSymInput { width, spacing, height, thickness, er }
+    fn input(
+        width: f64,
+        spacing: f64,
+        height: f64,
+        thickness: f64,
+        er: f64,
+    ) -> EdgeCoupledInternalSymInput {
+        EdgeCoupledInternalSymInput {
+            width,
+            spacing,
+            height,
+            thickness,
+            er,
+        }
     }
 
-    /// Web reference vector: W=10, S=63, H=63, T=1.2, Er=4.
-    /// S/H=1, weak coupling; Zdiff should be in the range 140–170 Ω.
     #[test]
-    fn web_reference_weak_coupling() {
-        let result = calculate(&input(10.0, 63.0, 63.0, 1.2, 4.0)).unwrap();
-
-        assert!(
-            result.zdiff >= 140.0 && result.zdiff <= 170.0,
-            "Zdiff {:.3} should be in range 140–170 Ω",
-            result.zdiff
-        );
+    fn zero_thickness_matches_independent_cohn_evaluation() {
+        // W=10, S=5, B=21.4, εr=4.6 (AGM evaluation): Zeven 56.153, Zodd 39.686.
+        let (ze, zo) = cohn_modes_thin(10.0, 5.0, 21.4, 4.6).unwrap();
+        assert_relative_eq!(ze, 56.1530, max_relative = 1e-5);
+        assert_relative_eq!(zo, 39.6860, max_relative = 1e-5);
     }
 
-    /// Narrower spacing increases coupling magnitude (higher Kb).
+    #[test]
+    fn thick_case_matches_independent_evaluation() {
+        // W=10, S=5, H=10, T=1.4, εr=4.6 (independent evaluation of Cohn eq. 18 and
+        // the continuity-shifted eq. 22): Zeven 49.525, Zodd 33.565, Zo 42.423.
+        let r = calculate(&input(10.0, 5.0, 10.0, 1.4, 4.6)).unwrap();
+        assert_relative_eq!(r.zeven, 49.525, max_relative = 1e-3);
+        assert_relative_eq!(r.zodd, 33.565, max_relative = 1e-3);
+        assert_relative_eq!(r.zo, 42.423, max_relative = 1e-3);
+        assert_relative_eq!(r.zdiff, 2.0 * r.zodd, max_relative = 1e-12);
+    }
+
+    #[test]
+    fn modes_converge_to_single_strip_for_wide_spacing() {
+        let r = calculate(&input(10.0, 500.0, 10.0, 1.4, 4.6)).unwrap();
+        assert_relative_eq!(r.zodd, r.zo, max_relative = 1e-3);
+        assert_relative_eq!(r.zeven, r.zo, max_relative = 1e-3);
+        assert!(r.kb < 1e-3);
+    }
+
+    #[test]
+    fn odd_mode_is_continuous_across_five_t_boundary() {
+        let t = 1.4;
+        let below = calculate(&input(10.0, 5.0 * t - 1e-6, 10.0, t, 4.6)).unwrap();
+        let above = calculate(&input(10.0, 5.0 * t + 1e-6, 10.0, t, 4.6)).unwrap();
+        assert_relative_eq!(below.zodd, above.zodd, max_relative = 1e-5);
+        assert_relative_eq!(below.zeven, above.zeven, max_relative = 1e-5);
+    }
+
+    #[test]
+    fn odd_mode_monotonic_in_spacing() {
+        let mut prev = 0.0;
+        let mut s = 0.5;
+        while s < 100.0 {
+            let z = calculate(&input(10.0, s, 10.0, 1.4, 4.6)).unwrap().zodd;
+            assert!(z > prev, "s={s}: {z} <= {prev}");
+            prev = z;
+            s *= 1.1;
+        }
+    }
+
     #[test]
     fn wider_spacing_reduces_coupling() {
         let close = calculate(&input(10.0, 5.0, 63.0, 1.2, 4.0)).unwrap();
-        let far   = calculate(&input(10.0, 20.0, 63.0, 1.2, 4.0)).unwrap();
-
-        assert!(
-            far.kb.abs() < close.kb.abs(),
-            "wider spacing Kb {:.4} should be smaller than {:.4}",
-            far.kb,
-            close.kb
-        );
+        let far = calculate(&input(10.0, 20.0, 63.0, 1.2, 4.0)).unwrap();
+        assert!(far.kb < close.kb);
     }
 
-    /// Higher Er gives lower Z0.
     #[test]
     fn higher_er_gives_lower_z0() {
-        let low_er  = calculate(&input(10.0, 10.0, 63.0, 1.2, 2.2)).unwrap();
+        let low_er = calculate(&input(10.0, 10.0, 63.0, 1.2, 2.2)).unwrap();
         let high_er = calculate(&input(10.0, 10.0, 63.0, 1.2, 4.6)).unwrap();
-
-        assert!(
-            high_er.zo < low_er.zo,
-            "higher Er Z0 {:.3} should be less than {:.3}",
-            high_er.zo,
-            low_er.zo
+        assert!(high_er.zo < low_er.zo);
+        assert_relative_eq!(
+            high_er.zo * 4.6_f64.sqrt(),
+            low_er.zo * 2.2_f64.sqrt(),
+            max_relative = 1e-12
         );
     }
 
-    /// For a fully embedded stripline, Er_eff equals Er exactly.
     #[test]
-    fn er_eff_equals_er() {
-        let er = 4.6_f64;
-        let result = calculate(&input(10.0, 10.0, 63.0, 1.2, er)).unwrap();
-
-        // Z0 = (60/sqrt(Er)) * ln(...); verify by back-computing Er from Z0 and the log term.
-        let ln_term = (1.9_f64 * (2.0 * 63.0 + 1.2) / (0.8 * 10.0 + 1.2)).ln();
-        let er_back = (60.0 * ln_term / result.zo).powi(2);
-        assert_relative_eq!(er_back, er, max_relative = 1e-10);
-    }
-
-    #[test]
-    fn rejects_negative_width() {
-        let result = calculate(&input(-1.0, 10.0, 63.0, 1.2, 4.0));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn rejects_er_below_one() {
-        let result = calculate(&input(10.0, 10.0, 63.0, 1.2, 0.5));
-        assert!(result.is_err());
+    fn rejects_invalid_inputs() {
+        assert!(calculate(&input(-1.0, 10.0, 63.0, 1.2, 4.0)).is_err());
+        assert!(calculate(&input(10.0, 0.0, 63.0, 1.2, 4.0)).is_err());
+        assert!(calculate(&input(10.0, 10.0, 63.0, 1.2, 0.5)).is_err());
+        assert!(calculate(&input(10.0, f64::INFINITY, 63.0, 1.2, 4.0)).is_err());
     }
 }

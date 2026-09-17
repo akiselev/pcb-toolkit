@@ -25,7 +25,7 @@ enum Commands {
     Current(commands::current::CurrentArgs),
     /// Fusing current (Onderdonk equation).
     Fusing(commands::fusing::FusingArgs),
-    /// Via impedance and parasitic properties.
+    /// Via lumped parasitics and barrel resistance.
     Via(commands::via::ViaArgs),
     /// Planar spiral inductor.
     Inductor(commands::inductor::InductorArgs),
@@ -49,7 +49,7 @@ enum Commands {
     Pdn(commands::pdn::PdnArgs),
     /// Thermal management (junction temperature).
     Thermal(commands::thermal::ThermalArgs),
-    /// Crosstalk estimation (NEXT).
+    /// Crosstalk estimation (NEXT) — experimental rule of thumb.
     Crosstalk(commands::crosstalk::CrosstalkArgs),
 }
 

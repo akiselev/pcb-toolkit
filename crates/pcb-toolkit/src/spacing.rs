@@ -1,28 +1,86 @@
-//! IPC-2221C minimum conductor spacing lookup.
+//! IPC-2221C minimum conductor spacing lookup (Table 6-1).
 //!
-//! 8 device categories × 9 voltage ranges, plus linear extrapolation above 500 V.
+//! The table is stored in its source unit (millimetres) exactly as
+//! published; mils are derived from it. The result is the table minimum, so
+//! presenting it rounded must round up, never down.
+//!
+//! Scope: Table 6-1 gives electrical clearances for DC or AC peak voltage
+//! between conductors under the construction and coating assumptions of
+//! each category. A successful lookup is not a certification of insulation
+//! or safety compliance; the standard's application notes, altitude and
+//! pollution-degree conditions and the above-500 V procedure apply.
 
 use serde::{Deserialize, Serialize};
 
-use crate::CalcError;
+use crate::model::{ModelInfo, ModelStatus};
+use crate::{CalcError, validate};
 
-/// IPC-2221C device type categories.
+/// Model description.
+pub const MODEL: ModelInfo = ModelInfo {
+    name: "IPC-2221C Table 6-1 electrical conductor spacing",
+    status: ModelStatus::Validated,
+    reference: "IPC-2221C (2023) Table 6-1, p.58; above 500 V linear rule per category",
+    validity: "0–500 V table lookup (all 72 cells checked against the published table); >500 V linear extrapolation per the standard's slope; DC or AC peak voltage",
+};
+
+/// Millimetres per mil.
+const MM_PER_MIL: f64 = 0.0254;
+
+/// IPC-2221C device type categories (Saturn PCB Toolkit labels).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceType {
+    /// Internal conductors.
     B1,
+    /// External conductors, uncoated, sea level to 3050 m.
     B2,
+    /// External conductors, uncoated, over 3050 m or in a vacuum.
     B3,
+    /// External conductors covered with solder mask (any elevation).
     B4,
+    /// External conductors, coated (conformal coating), any elevation or vacuum.
     B5,
+    /// External component lead/termination, coated, any elevation or vacuum.
     A6,
+    /// External component lead/termination, uncoated, sea level to 3050 m.
     A7,
+    /// External component lead/termination, uncoated, over 3050 m or in a vacuum.
     A8,
+}
+
+impl DeviceType {
+    /// Human-readable category description.
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::B1 => "internal conductors",
+            Self::B2 => "external conductors, uncoated, sea level to 3050 m",
+            Self::B3 => "external conductors, uncoated, over 3050 m or in a vacuum",
+            Self::B4 => "external conductors covered with solder mask, any elevation",
+            Self::B5 => "external conductors, conformally coated, any elevation or vacuum",
+            Self::A6 => "external component leads/terminations, coated, any elevation or vacuum",
+            Self::A7 => "external component leads/terminations, uncoated, sea level to 3050 m",
+            Self::A8 => {
+                "external component leads/terminations, uncoated, over 3050 m or in a vacuum"
+            }
+        }
+    }
+
+    /// All categories, in table order.
+    pub const ALL: [DeviceType; 8] = [
+        Self::B1,
+        Self::B2,
+        Self::B3,
+        Self::B4,
+        Self::B5,
+        Self::A6,
+        Self::A7,
+        Self::A8,
+    ];
 }
 
 /// Inputs for the IPC-2221C conductor spacing lookup.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpacingInput {
-    /// Peak voltage across the conductor gap (V).
+    /// Peak voltage across the conductor gap (V, DC or AC peak).
     pub voltage: f64,
     /// IPC-2221C device type category.
     pub device_type: DeviceType,
@@ -31,104 +89,64 @@ pub struct SpacingInput {
 /// Results of an IPC-2221C conductor spacing lookup.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpacingResult {
-    /// Minimum conductor spacing in mils.
-    pub spacing_mils: f64,
-    /// Minimum conductor spacing in millimetres.
+    /// Minimum conductor spacing in millimetres (the published value).
     pub spacing_mm: f64,
+    /// Minimum conductor spacing in mils, derived from the millimetre value.
+    pub spacing_mils: f64,
 }
 
-// Lookup table: rows = device types [B1..A8], columns = voltage ranges [0..8].
+/// Upper bound (inclusive) of each voltage column (V).
+const COLUMN_MAX_V: [f64; 9] = [15.0, 30.0, 50.0, 100.0, 150.0, 170.0, 250.0, 300.0, 500.0];
+
+// Lookup table in millimetres: rows = device types [B1..A8], columns = voltage ranges.
 // Voltage ranges: 0-15, 16-30, 31-50, 51-100, 101-150, 151-170, 171-250, 251-300, 301-500.
-// All values in mils.
 #[rustfmt::skip]
-const TABLE: [[f64; 9]; 8] = [
-    //   0-15    16-30   31-50   51-100  101-150 151-170 171-250 251-300 301-500
-    [  1.97,   1.97,   3.94,   3.94,   7.87,   7.87,   7.87,   7.87,   9.84 ], // B1
-    [  3.94,   3.94,  25.17,  25.17,  25.17,  49.21,  49.21,  49.21,  98.43 ], // B2
-    [  3.94,   3.94,  25.17,  59.06, 125.98, 125.98, 251.97, 492.13, 492.13 ], // B3
-    [  2.95,   2.95,  11.81,  11.81,  31.50,  31.50,  31.50,  31.50,  62.99 ], // B4
-    [  2.95,   2.95,   5.12,   5.12,  15.75,  15.75,  15.75,  15.75,  31.50 ], // B5
-    [  5.12,   5.12,   5.12,   5.12,  15.75,  15.75,  15.75,  15.75,  31.50 ], // A6
-    [  5.12,   9.84,  15.75,  19.69,  31.50,  31.50,  31.50,  31.50,  59.06 ], // A7
-    [  5.12,   9.84,  31.50,  39.37,  62.99,  62.99,  62.99,  62.99, 118.11 ], // A8
+const TABLE_MM: [[f64; 9]; 8] = [
+    //  0-15   16-30  31-50  51-100 101-150 151-170 171-250 251-300 301-500
+    [ 0.05,  0.05,  0.10,  0.10,  0.20,   0.20,   0.20,   0.20,   0.25 ], // B1
+    [ 0.10,  0.10,  0.64,  0.64,  0.64,   1.25,   1.25,   1.25,   2.50 ], // B2
+    [ 0.10,  0.10,  0.64,  1.50,  3.20,   3.20,   6.40,  12.50,  12.50 ], // B3
+    [ 0.075, 0.075, 0.30,  0.30,  0.80,   0.80,   0.80,   0.80,   1.60 ], // B4
+    [ 0.075, 0.075, 0.13,  0.13,  0.40,   0.40,   0.40,   0.40,   0.80 ], // B5
+    [ 0.13,  0.13,  0.13,  0.13,  0.40,   0.40,   0.40,   0.40,   0.80 ], // A6
+    [ 0.13,  0.25,  0.40,  0.50,  0.80,   0.80,   0.80,   0.80,   1.50 ], // A7
+    [ 0.13,  0.25,  0.80,  1.00,  1.60,   1.60,   1.60,   1.60,   3.00 ], // A8
 ];
 
-/// Linear extrapolation coefficients for voltages above 500 V.
-/// Each entry is (slope mils/V, intercept mils) for `spacing = (V - 500) * slope + intercept`.
-#[rustfmt::skip]
-const EXTRAP: [(f64, f64); 8] = [
-    (0.098425, 9.8425),   // B1
-    (0.196850, 98.4252),  // B2
-    (0.984252, 492.1260), // B3
-    (0.120070, 62.9900),  // B4
-    (0.120070, 31.4961),  // B5
-    (0.120070, 31.4961),  // A6
-    (0.120070, 59.0551),  // A7
-    (0.240157, 118.1100), // A8
+/// Slope (mm/V) for voltages above 500 V: `spacing = table[301–500 V] + (V − 500) × slope`.
+const SLOPE_MM_PER_V: [f64; 8] = [
+    0.0025, 0.005, 0.025, 0.00305, 0.00305, 0.00305, 0.00305, 0.0061,
 ];
 
 fn device_index(d: DeviceType) -> usize {
-    match d {
-        DeviceType::B1 => 0,
-        DeviceType::B2 => 1,
-        DeviceType::B3 => 2,
-        DeviceType::B4 => 3,
-        DeviceType::B5 => 4,
-        DeviceType::A6 => 5,
-        DeviceType::A7 => 6,
-        DeviceType::A8 => 7,
-    }
-}
-
-fn voltage_column(voltage: f64) -> usize {
-    if voltage <= 15.0 {
-        0
-    } else if voltage <= 30.0 {
-        1
-    } else if voltage <= 50.0 {
-        2
-    } else if voltage <= 100.0 {
-        3
-    } else if voltage <= 150.0 {
-        4
-    } else if voltage <= 170.0 {
-        5
-    } else if voltage <= 250.0 {
-        6
-    } else if voltage <= 300.0 {
-        7
-    } else {
-        8
-    }
+    DeviceType::ALL
+        .iter()
+        .position(|&x| x == d)
+        .expect("every variant is listed")
 }
 
 /// Look up the IPC-2221C minimum conductor spacing for the given voltage and device type.
 ///
 /// # Errors
-///
-/// Returns [`CalcError::OutOfRange`] if `voltage` is negative.
+/// Returns an error if `voltage` is negative or non-finite.
 pub fn spacing(input: &SpacingInput) -> Result<SpacingResult, CalcError> {
-    if input.voltage < 0.0 {
-        return Err(CalcError::OutOfRange {
+    let voltage =
+        validate::non_negative("voltage", input.voltage).map_err(|_| CalcError::OutOfRange {
             name: "voltage",
             value: input.voltage,
-            expected: ">= 0",
-        });
-    }
-
+            expected: ">= 0 and finite",
+        })?;
     let row = device_index(input.device_type);
 
-    let spacing_mils = if input.voltage > 500.0 {
-        let (slope, intercept) = EXTRAP[row];
-        (input.voltage - 500.0) * slope + intercept
-    } else {
-        let col = voltage_column(input.voltage);
-        TABLE[row][col]
+    let spacing_mm = match COLUMN_MAX_V.iter().position(|&max| voltage <= max) {
+        Some(col) => TABLE_MM[row][col],
+        None => TABLE_MM[row][8] + (voltage - 500.0) * SLOPE_MM_PER_V[row],
     };
+    let spacing_mm = validate::finite_result("spacing_mm", spacing_mm)?;
 
     Ok(SpacingResult {
-        spacing_mils,
-        spacing_mm: spacing_mils * 0.0254,
+        spacing_mm,
+        spacing_mils: spacing_mm / MM_PER_MIL,
     })
 }
 
@@ -139,84 +157,101 @@ mod tests {
     use super::*;
 
     fn lookup(voltage: f64, device_type: DeviceType) -> SpacingResult {
-        spacing(&SpacingInput { voltage, device_type }).unwrap()
+        spacing(&SpacingInput {
+            voltage,
+            device_type,
+        })
+        .unwrap()
     }
 
     #[test]
     fn b1_10v() {
         let r = lookup(10.0, DeviceType::B1);
-        assert_relative_eq!(r.spacing_mils, 1.97, epsilon = 1e-6);
+        assert_relative_eq!(r.spacing_mm, 0.05, epsilon = 1e-12);
+        assert_relative_eq!(r.spacing_mils, 1.9685, max_relative = 1e-4);
     }
 
     #[test]
     fn b3_40v() {
-        let r = lookup(40.0, DeviceType::B3);
-        assert_relative_eq!(r.spacing_mils, 25.17, epsilon = 1e-6);
+        assert_relative_eq!(
+            lookup(40.0, DeviceType::B3).spacing_mm,
+            0.64,
+            epsilon = 1e-12
+        );
+    }
+
+    #[test]
+    fn minimum_is_never_undercut_by_rounding() {
+        // 0.075 mm must not become 0.07493 mm through a rounded mil intermediate (audit A19).
+        let r = lookup(10.0, DeviceType::B4);
+        assert!(r.spacing_mm >= 0.075);
+        assert!(r.spacing_mils * MM_PER_MIL >= 0.075 - 1e-15);
     }
 
     #[test]
     fn b1_600v_extrapolation() {
         let r = lookup(600.0, DeviceType::B1);
-        let expected = (600.0 - 500.0) * 0.098425 + 9.8425;
-        assert_relative_eq!(r.spacing_mils, expected, epsilon = 1e-6);
-        assert_relative_eq!(r.spacing_mils, 19.685, epsilon = 1e-3);
+        assert_relative_eq!(r.spacing_mm, 0.25 + 100.0 * 0.0025, epsilon = 1e-12);
+        assert_relative_eq!(r.spacing_mils, 19.685, max_relative = 1e-4);
     }
 
     #[test]
-    fn boundary_0v() {
-        // 0 V → column 0
-        let r = lookup(0.0, DeviceType::B1);
-        assert_relative_eq!(r.spacing_mils, TABLE[0][0], epsilon = 1e-9);
+    fn column_boundaries_are_inclusive() {
+        assert_eq!(lookup(0.0, DeviceType::B1).spacing_mm, TABLE_MM[0][0]);
+        assert_eq!(lookup(15.0, DeviceType::B1).spacing_mm, TABLE_MM[0][0]);
+        assert_eq!(lookup(16.0, DeviceType::B1).spacing_mm, TABLE_MM[0][1]);
+        assert_eq!(lookup(30.0, DeviceType::B1).spacing_mm, TABLE_MM[0][1]);
+        assert_eq!(lookup(500.0, DeviceType::B1).spacing_mm, TABLE_MM[0][8]);
+        assert_relative_eq!(
+            lookup(501.0, DeviceType::B1).spacing_mm,
+            TABLE_MM[0][8] + 0.0025,
+            epsilon = 1e-12
+        );
     }
 
     #[test]
-    fn boundary_15v() {
-        // 15 V → column 0 (inclusive upper bound)
-        let r = lookup(15.0, DeviceType::B1);
-        assert_relative_eq!(r.spacing_mils, TABLE[0][0], epsilon = 1e-9);
+    fn extrapolation_is_continuous_at_500v_for_every_category() {
+        for d in DeviceType::ALL {
+            let a = lookup(500.0, d).spacing_mm;
+            let b = lookup(500.0 + 1e-9, d).spacing_mm;
+            assert!((a - b).abs() < 1e-9, "{d:?}");
+        }
     }
 
     #[test]
-    fn boundary_16v() {
-        // 16 V → column 1
-        let r = lookup(16.0, DeviceType::B1);
-        assert_relative_eq!(r.spacing_mils, TABLE[0][1], epsilon = 1e-9);
+    fn table_is_monotonic_in_voltage() {
+        for row in TABLE_MM {
+            for w in row.windows(2) {
+                assert!(w[1] >= w[0]);
+            }
+        }
     }
 
     #[test]
-    fn boundary_30v() {
-        // 30 V → column 1 (inclusive upper bound)
-        let r = lookup(30.0, DeviceType::B1);
-        assert_relative_eq!(r.spacing_mils, TABLE[0][1], epsilon = 1e-9);
-    }
-
-    #[test]
-    fn boundary_500v() {
-        // 500 V → column 8 (last table column)
-        let r = lookup(500.0, DeviceType::B1);
-        assert_relative_eq!(r.spacing_mils, TABLE[0][8], epsilon = 1e-9);
-    }
-
-    #[test]
-    fn boundary_501v_extrapolation() {
-        // 501 V → linear extrapolation
-        let r = lookup(501.0, DeviceType::B1);
-        let expected = 1.0 * 0.098425 + 9.8425;
-        assert_relative_eq!(r.spacing_mils, expected, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn mm_conversion() {
-        let r = lookup(10.0, DeviceType::B2);
-        assert_relative_eq!(r.spacing_mm, r.spacing_mils * 0.0254, epsilon = 1e-9);
-    }
-
-    #[test]
-    fn rejects_negative_voltage() {
-        let result = spacing(&SpacingInput {
-            voltage: -1.0,
-            device_type: DeviceType::B1,
-        });
-        assert!(matches!(result, Err(CalcError::OutOfRange { name: "voltage", .. })));
+    fn rejects_negative_and_nonfinite_voltage() {
+        assert!(matches!(
+            spacing(&SpacingInput {
+                voltage: -1.0,
+                device_type: DeviceType::B1
+            }),
+            Err(CalcError::OutOfRange {
+                name: "voltage",
+                ..
+            })
+        ));
+        assert!(
+            spacing(&SpacingInput {
+                voltage: f64::NAN,
+                device_type: DeviceType::B1
+            })
+            .is_err()
+        );
+        assert!(
+            spacing(&SpacingInput {
+                voltage: f64::INFINITY,
+                device_type: DeviceType::B1
+            })
+            .is_err()
+        );
     }
 }

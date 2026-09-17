@@ -1,13 +1,15 @@
 //! Differential pair impedance calculators.
 //!
 //! Supports edge-coupled (external, internal symmetric/asymmetric, embedded)
-//! and broadside-coupled (shielded, non-shielded) configurations.
+//! and shielded broadside-coupled configurations.
 //!
-//! Outputs: Zdiff, Zodd, Zeven, coupling coefficient Kb, NEXT voltage.
+//! Outputs: Zdiff, Zo, Zodd, Zeven and the backward coupling coefficient Kb
+//! (unterminated and terminated, linear and dB). Each module exposes a
+//! `MODEL` constant describing its provenance and range.
 
-pub mod types;
-pub mod edge_coupled_external;
-pub mod edge_coupled_internal_sym;
-pub mod edge_coupled_internal_asym;
-pub mod edge_coupled_embedded;
 pub mod broadside_coupled;
+pub mod edge_coupled_embedded;
+pub mod edge_coupled_external;
+pub mod edge_coupled_internal_asym;
+pub mod edge_coupled_internal_sym;
+pub mod types;
